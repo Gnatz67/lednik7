@@ -141,7 +141,7 @@ const ZOOMS=[1,2];let ZOOM=1;const CSZ=()=>ZOOM===1?2:1;const CAM={x:0,y:0};
 function camTarget(){const vw=LW/ZOOM,vh=LH/ZOOM;return{x:clamp(P.x-vw/2,0,LW-vw),y:clamp(P.y-10-vh/2,0,LH-vh)}}
 function camStep(dt,snap){if(!P)return;const t=camTarget();if(snap||RM){CAM.x=t.x;CAM.y=t.y;return}const k=1-Math.exp(-7*dt);CAM.x+=(t.x-CAM.x)*k;CAM.y+=(t.y-CAM.y)*k}
 function setDiff(d){DIFF=clamp(Math.round(d)||6,1,10);const t=(DIFF-1)/9;K={t,fov:1.05+.5*t,r:84+42*t,rc:120+40*t,r0:.4+.6*t,r1:1.6+1.9*t,sp:22+10*t,si:30+18*t,sc:54+21*t,ko:24-14*t,lost:3+2.5*t,wake:.2+.4*t,call:DIFF>=5,glance:DIFF>=4,gi:9-5*t,noise:66+32*t,alert:150+130*t,aim:180-50*t,find:22+14*t}}
-const T={F:0,W:1,D:2,BARS:3,LOW:4,BED:5,TALL:6,C:7,WATER:8,DOCK:9,COAL:10,GRATE:11,BOAT:12,PIL:13};
+const T={F:0,W:1,D:2,BARS:3,LOW:4,BED:5,TALL:6,C:7,WATER:8,DOCK:9,COAL:10,GRATE:11,BOAT:12,PIL:13,STAIR:14};
 const SOLID=new Set([T.W,T.BARS,T.LOW,T.BED,T.TALL,T.C,T.WATER,T.BOAT,T.PIL,T.COAL]);
 const TALLC=new Set(['locker','safe','cabinet','medcab']);
 const D4=[[1,0],[-1,0],[0,1],[0,-1]];
@@ -197,57 +197,60 @@ const SP={
   s:['............','...OOOOO....','..OaaaaaO...','..OaaaaaO...','..OaaSSSO...','..OaSSeSO...','...OsSSO....','..OPPPPO....','.OPppppPO...','.OPPPPPSO...','.OPppppPO...','.OPPPPPPO...','.OpppOppO...','..OPO.OPO...','..OBBOOBBO..','...OO..OO...'],
   vb:['..OPPO.OPPO.','..OBBO.OPPO.','...OO..OBBO.'],sb:['...OPPO.....','...OBBBO....','....OOO.....']}};
 const PALG={O:'#090c14',H:'#8c755b',h:'#5c4a38',r:'#e0463b',S:'#e2b796',s:'#b5856a',e:'#1a1410',C:'#58633f',c:'#3c442d',l:'#76834f',b:'#2b241c',k:'#d4b153',B:'#17191f',g:'#2c2c25',y:'#fff0b0'};
+const PALE=Object.assign({},PALG,{C:'#9a2b26',c:'#641b18',l:'#c4473d',H:'#2c2724',h:'#191513',r:'#f0c95a',b:'#1a1a1a'});
 const PALP={O:'#090c14',a:'#2a3550',S:'#e2b796',s:'#b5856a',e:'#1a1410',P:'#a7b3c6',p:'#5b6678',n:'#efe9d2',B:'#17191f'};
 function mkSpr(g,pal,flip){const c=document.createElement('canvas');c.width=12;c.height=16;const f=c.getContext('2d');for(let y=0;y<16;y++)for(let x=0;x<12;x++){const ch=g[y][flip?11-x:x];if(ch!=='.'&&pal[ch]){f.fillStyle=pal[ch];f.fillRect(x,y,1,1)}}return c}
 const SPR={};
 (function(){const coat={};for(const k of ['d','u','s'])coat[k]=SP.guard[k].map(r=>r.replace(/y/g,'g'));coat.vb=SP.guard.vb;coat.sb=SP.guard.sb;
   const wb=(g,b)=>g.slice(0,13).concat(b);
-  for(const [name,set,pal] of [['guard',SP.guard,PALG],['coat',coat,PALG],['pris',SP.pris,PALP]]){
+  for(const [name,set,pal] of [['guard',SP.guard,PALG],['elite',SP.guard,PALE],['coat',coat,PALG],['pris',SP.pris,PALP]]){
     SPR[name]=[0,1].map(fr=>[set.d,set.s,set.u,set.s].map((g,d)=>mkSpr(fr?wb(g,d%2?set.sb:set.vb):g,pal,d===3)))}})();
 
 /* ================= world generation ================= */
+const FLOORS=[{w:2,h:2,name:'Basement'},{w:3,h:3,name:'Ground floor'},{w:3,h:3,name:'Upper floor'}];
 function genWorld(seed){
   const R=mulberry(seed*2654435761>>>0),ri=n=>Math.floor(R()*n),pick=a=>a[ri(a.length)];
   const shuf=a=>{for(let i=a.length-1;i>0;i--){const j=ri(i+1);[a[i],a[j]]=[a[j],a[i]]}return a};
-  const N=GW*GH,cx=c=>c%GW,cy=c=>(c/GW)|0;
-  const nbs=c=>{const r=[],x=cx(c),y=cy(c);if(y>0)r.push([c-GW,'t']);if(x<GW-1)r.push([c+1,'r']);if(y<GH-1)r.push([c+GW,'b']);if(x>0)r.push([c-1,'l']);return r};
-  const rooms=[];for(let i=0;i<N;i++)rooms.push({id:i,gx:cx(i),gy:cy(i),edges:{t:null,r:null,b:null,l:null}});
-  const edges=[];
-  const link=(a,b,s,tree)=>{const e={a,b,lock:null,was:null,tree};edges.push(e);rooms[a].edges[s]=e;rooms[b].edges[OPP[s]]=e;return e};
+  const rooms=[],edges=[],fl=[],adj=[];
+  FLOORS.forEach((F,f)=>{fl.push({base:rooms.length,w:F.w,h:F.h});for(let y=0;y<F.h;y++)for(let x=0;x<F.w;x++){rooms.push({id:rooms.length,lv:f,gx:x,gy:y,edges:{t:null,r:null,b:null,l:null},nb:{t:null,r:null,b:null,l:null},up:null,down:null});adj.push([])}});
+  const at=(f,x,y)=>fl[f].base+y*fl[f].w+x;
+  const nbs=c=>{const r=rooms[c],F=fl[r.lv],o=[];if(r.gy>0)o.push([at(r.lv,r.gx,r.gy-1),'t']);if(r.gx<F.w-1)o.push([at(r.lv,r.gx+1,r.gy),'r']);if(r.gy<F.h-1)o.push([at(r.lv,r.gx,r.gy+1),'b']);if(r.gx>0)o.push([at(r.lv,r.gx-1,r.gy),'l']);return o};
   const other=(e,c)=>e.a===c?e.b:e.a;
-  const start=(GH-1)*GW+ri(GW);
-  const inT=new Array(N).fill(false),depth=new Array(N).fill(0);inT[start]=true;
-  const act=[start];
-  while(act.length){const i=R()<.5?act.length-1:ri(act.length),c=act[i];const o=nbs(c).filter(([k])=>!inT[k]);if(!o.length){act.splice(i,1);continue}const [k,s]=pick(o);inT[k]=true;depth[k]=depth[c]+1;link(c,k,s,true);act.push(k)}
-  const deg=c=>Object.values(rooms[c].edges).filter(Boolean).length;
-  const leaves=[...Array(N).keys()].filter(c=>c!==start&&deg(c)===1);
-  const md=Math.max(...leaves.map(c=>depth[c]));
+  const link=(a,b,s,tree)=>{const e={a,b,lock:null,was:null,tree};edges.push(e);rooms[a].edges[s]=e;rooms[b].edges[OPP[s]]=e;rooms[a].nb[s]=b;rooms[b].nb[OPP[s]]=a;adj[a].push(e);adj[b].push(e);return e};
+  const floorIds=f=>{const r=[];for(let k=0;k<fl[f].w*fl[f].h;k++)r.push(fl[f].base+k);return r};
+  const depth=new Array(rooms.length).fill(0);
+  const grow=root=>{const inT=new Set([root]),act=[root];depth[root]=0;while(act.length){const i=R()<.5?act.length-1:ri(act.length),c=act[i];const o=nbs(c).filter(([k])=>!inT.has(k));if(!o.length){act.splice(i,1);continue}const [k,s]=pick(o);inT.add(k);depth[k]=depth[c]+1;link(c,k,s,true);act.push(k)}};
+  const bfsD=s=>{const d=new Array(rooms.length).fill(1e9);d[s]=0;const q=[s];while(q.length){const c=q.shift();for(const e of adj[c]){const o=other(e,c);if(d[o]>d[c]+1){d[o]=d[c]+1;q.push(o)}}}return d};
+  const start=at(0,ri(2),1);
+  const roots=[start],ups=[];
+  for(let f=0;f<FLOORS.length;f++){
+    grow(roots[f]);
+    if(f<FLOORS.length-1){const ids=floorIds(f).filter(c=>c!==roots[f]).sort((a,b)=>depth[b]-depth[a]);const u=pick(ids.slice(0,Math.max(1,Math.ceil(ids.length/2))));
+      const d=pick(floorIds(f+1));const e={a:u,b:d,lock:null,was:null,tree:true,stair:true};edges.push(e);adj[u].push(e);adj[d].push(e);rooms[u].up=d;rooms[d].down=u;ups.push(u);roots.push(d)}
+  }
+  const top=FLOORS.length-1,deg=c=>Object.values(rooms[c].edges).filter(Boolean).length;
+  const leaves=floorIds(top).filter(c=>c!==roots[top]&&deg(c)===1),md=Math.max(...leaves.map(c=>depth[c]));
   const office=pick(leaves.filter(c=>depth[c]===md));
-  const cand=[];for(let c=0;c<N;c++)for(const [k,s] of nbs(c))if(k>c&&!rooms[c].edges[s]&&c!==office&&k!==office)cand.push([c,k,s]);
-  shuf(cand).slice(0,3).forEach(([c,k,s])=>link(c,k,s,false));
-  const bfsD=s=>{const d=new Array(N).fill(1e9);d[s]=0;const q=[s];while(q.length){const c=q.shift();for(const k in rooms[c].edges){const e=rooms[c].edges[k];if(!e)continue;const o=other(e,c);if(d[o]>d[c]+1){d[o]=d[c]+1;q.push(o)}}}return d};
-  const dist=bfsD(start);
-  const type=new Array(N).fill(null);type[start]='cells';type[office]='office';
-  const edgeCells=[...Array(N).keys()].filter(c=>!type[c]&&(cx(c)===0||cx(c)===GW-1||cy(c)===0||cy(c)===GH-1)).sort((a,b)=>dist[b]-dist[a]);
-  const boat=pick(edgeCells.slice(0,4));type[boat]='boat';
-  const rest=[...Array(N).keys()].filter(c=>!type[c]).sort((a,b)=>dist[b]-dist[a]);
-  const boiler=pick(rest.slice(0,5));type[boiler]='boiler';
-  const pool=shuf(['barracks','barracks','mess','laundry','infirmary','yard','yard','cells','store','store','hall','hall']);
-  for(let c=0;c<N;c++)if(!type[c])type[c]=pool.pop();
+  const roofC=floorIds(top).filter(c=>c!==office&&c!==roots[top]).sort((a,b)=>depth[b]-depth[a]);
+  const roof=roofC.length?pick(roofC.slice(0,3)):roots[top];
+  for(let f=0;f<FLOORS.length;f++){const cand=[];for(const c of floorIds(f))for(const [k,s] of nbs(c))if(k>c&&!rooms[c].edges[s]&&c!==office&&k!==office)cand.push([c,k,s]);shuf(cand).slice(0,f===0?1:2).forEach(([c,k,s])=>link(c,k,s,false))}
+  const type=new Array(rooms.length).fill(null);type[start]='cells';type[office]='office';
+  const pools=[['boiler','store','cells'],['mess','laundry','infirmary','yard','yard','hall','barracks','store','hall'],['barracks','hall','cells','infirmary','store','hall','mess','laundry']];
+  for(let f=0;f<FLOORS.length;f++){const pool=shuf(pools[f].slice());for(const c of floorIds(f))if(!type[c])type[c]=pool.pop()||'hall'}
   /* locks and keys: key i is placed only in rooms reachable with keys < i, never behind its own door */
   const offE=Object.values(rooms[office].edges).find(Boolean);offE.lock='green';
-  const lc=shuf(edges.filter(e=>e.tree&&e!==offE&&e.a!==start&&e.b!==start));
+  const lc=shuf(edges.filter(e=>e.tree&&!e.stair&&e!==offE&&e.a!==start&&e.b!==start));
   const cols=shuf(['red','blue']),locks=[];
   for(let i=0;i<2&&i<lc.length;i++){lc[i].lock=cols[i];locks.push(lc[i])}
   locks.push(offE);
-  const reach=open=>{const seen=new Set([start]),q=[start];while(q.length){const c=q.shift();for(const s in rooms[c].edges){const e=rooms[c].edges[s];if(!e||(e.lock&&!open.has(e)))continue;const k=other(e,c);if(!seen.has(k)){seen.add(k);q.push(k)}}}return seen};
+  const reach=open=>{const seen=new Set([start]),q=[start];while(q.length){const c=q.shift();for(const e of adj[c]){if(e.lock&&!open.has(e))continue;const k=other(e,c);if(!seen.has(k)){seen.add(k);q.push(k)}}}return seen};
   const open=new Set(),keyRoom={};let prev=new Set([start]);
   for(const e of locks){const r=reach(open);let c=[...r].filter(x=>!prev.has(x));if(!c.length)c=[...r].filter(x=>x!==start);if(!c.length)c=[start];keyRoom[e.lock]=pick(c);open.add(e);prev=r}
   /* build rooms */
   for(const rm of rooms){
     rm.type=type[rm.id];Object.assign(rm,{name:RT[rm.type].name,sign:RT[rm.type].sign,dark:RT[rm.type].dark});
-    const sides=[];if(rm.gy===0)sides.push('t');if(rm.gy===GH-1)sides.push('b');if(rm.gx===0)sides.push('l');if(rm.gx===GW-1)sides.push('r');
-    buildRoom(rm,R,{start:rm.id===start,water:rm.type==='boat'?pick(sides):null});
+    const st=[];if(rm.up!=null)st.push('up');if(rm.down!=null)st.push('down');if(rm.id===roof)st.push('roof');
+    buildRoom(rm,R,{start:rm.id===start,stairs:st});
     rm.dseed=(seed*31+rm.id*977)>>>0;
   }
   /* items */
@@ -260,12 +263,14 @@ function genWorld(seed){
   const coatR=rooms.filter(r=>(r.type==='barracks'||r.type==='laundry')&&r.id!==office).map(r=>r.id);
   putItem(coatR.length?pick(coatR):pick(r0),'coat');
   putItem(start,'stones');
-  for(let i=0;i<4;i++)putItem(pick(rooms.filter(r=>r.id!==office)).id,'stones');
+  for(let i=0;i<5;i++)putItem(pick(rooms.filter(r=>r.id!==office)).id,'stones');
   for(const rm of rooms)for(const k of rm.cont)k.flav=pick(FLAV);
   /* guards */
   for(const rm of rooms){const [a,b]=RT[rm.type].g;let n=b;if(rm.id===start)n=1;rm.gdefs=[];for(let i=0;i<n;i++){const d=mkRoute(rm,R,ri,pick,rm.id===start);if(d)rm.gdefs.push(d)}}
   for(const rm of rooms)for(const d of rm.gdefs){const r=R();d.loot=r<.45?'darts':r<.68?'stones':r<.82?'key:'+pick(['red','blue']):r<.9&&rm.id!==start?'key:green':null;d.flav=pick(['A pack of cheap cigarettes.','A letter from home. Nothing useful.','Sunflower seeds.','A pocket comb and some kopecks.']);d.looted=false}
-  return {seed,rooms,edges,start,office,boat,boiler,keyRoom};
+  const topIds=floorIds(top).filter(c=>c!==roots[top]),eliteRooms=[office,roof,...shuf(topIds.filter(c=>c!==office&&c!==roof))].filter((c,i,a)=>a.indexOf(c)===i&&c!==roots[top]).slice(0,2);
+  const elites=[];for(const c of eliteRooms){const d=mkRoute(rooms[c],R,ri,pick,false);if(d){d.elite=true;d.loot=null;d.flav='';d.looted=true;elites.push({room:c,def:d})}}
+  return {seed,rooms,edges,adj,fl,start,office,roof,keyRoom,elites};
 }
 
 function buildRoom(rm,R,opt){
@@ -319,10 +324,9 @@ function tryBuild(rm,R,opt,plain){
     pier.forEach(([x,y])=>{t[y][x]=T.DOCK});bt.forEach(([x,y],i)=>{t[y][x]=T.BOAT;v[y][x]=(s==='b'||s==='t'?'h':'v')+i;exits.push({x,y,kind:'boat'})});
     o.floor='plank';
   }
-  if(ty==='boiler'){
-    let ok=false;for(const [x,y] of shufA([[16,10],[3,10],[15,9],[4,9],[16,4],[3,5],[12,10],[7,10]],R))if(set(x,y,T.GRATE)){exits.push({x,y,kind:'grate'});ok=true;break}
-    if(!ok)return false;
-  }
+  for(const kind of (opt.stairs||[])){let ok=false;
+    for(let tr=0;tr<60&&!ok;tr++){const x=3+ri(13),y=3+ri(7);if(free(x,y)&&free(x+1,y)&&free(x,y+1)&&free(x+1,y+1)&&free(x,y-1)&&free(x+1,y-1)){for(const [dx,dy] of [[0,0],[1,0],[0,1],[1,1]]){t[y+dy][x+dx]=T.STAIR;v[y+dy][x+dx]=kind+(dx+dy*2);exits.push({x:x+dx,y:y+dy,kind})}K(x,y-1);K(x+1,y-1);for(const [dx,dy] of [[-1,0],[-1,1],[2,0],[2,1],[0,2],[1,2]])K(x+dx,y+dy);ok=true}}
+    if(!ok)return false}
   if(ty==='office'){let ok=false;for(const [x,y] of shufA([[1,1],[18,1],[1,12],[18,12],[2,1],[17,1]],R))if(addC(x,y,'safe')){ok=true;break}if(!ok)return false;o.floor='wood'}
   if(ty==='yard'){o.floor='snow';o.outdoor=true}
   /* furnishings */
@@ -344,7 +348,7 @@ function tryBuild(rm,R,opt,plain){
   if(cont.length<minC){addWallC('locker',minC-cont.length);if(cont.length<minC)addWallC('foot',minC-cont.length)}
   if(cont.length<minC)return false;
   /* validate connectivity */
-  const pass=(x,y)=>x>=0&&y>=0&&x<TW&&y<TH&&(t[y][x]===T.F||t[y][x]===T.D||t[y][x]===T.DOCK||t[y][x]===T.GRATE);
+  const pass=(x,y)=>x>=0&&y>=0&&x<TW&&y<TH&&(t[y][x]===T.F||t[y][x]===T.D||t[y][x]===T.DOCK||t[y][x]===T.GRATE||t[y][x]===T.STAIR);
   let sx=-1,sy=-1;
   for(let y=0;y<TH&&sx<0;y++)for(let x=0;x<TW;x++)if(t[y][x]===T.D){sx=x;sy=y;break}
   if(opt.start){sx=2;sy=2}
@@ -355,7 +359,7 @@ function tryBuild(rm,R,opt,plain){
   for(let y=0;y<TH;y++)for(let x=0;x<TW;x++)if(t[y][x]===T.D&&!seen[y*TW+x])return false;
   const adjOK=(x,y)=>D4.some(([dx,dy])=>S(x+dx,y+dy));
   for(const k of cont)if(!adjOK(k.x,k.y))return false;
-  for(const e of exits)if(e.kind==='grate'?!S(e.x,e.y):!adjOK(e.x,e.y))return false;
+  for(const e of exits)if(!S(e.x,e.y))return false;
   if(cnt<50)return false;
   /* lamps & windows */
   const reached=[];for(let y=1;y<TH-1;y++)for(let x=1;x<TW-1;x++)if(seen[y*TW+x]&&t[y][x]!==T.D)reached.push([x,y]);
@@ -392,12 +396,13 @@ function mkRoute(rm,R,ri,pick,isStart){
 }
 function verifyWorld(w){
   const have=new Set();let reach,ch=true;
-  const rch=()=>{const seen=new Set([w.start]),q=[w.start];while(q.length){const c=q.shift();for(const s in w.rooms[c].edges){const e=w.rooms[c].edges[s];if(!e||(e.lock&&!have.has(e.lock)))continue;const k=e.a===c?e.b:e.a;if(!seen.has(k)){seen.add(k);q.push(k)}}}return seen};
+  const rch=()=>{const seen=new Set([w.start]),q=[w.start];while(q.length){const c=q.shift();for(const e of w.adj[c]){if(e.lock&&!have.has(e.lock))continue;const k=e.a===c?e.b:e.a;if(!seen.has(k)){seen.add(k);q.push(k)}}}return seen};
   while(ch){ch=false;reach=rch();for(const c of reach)for(const k of w.rooms[c].cont)if(k.item&&k.item.startsWith('key:')&&!have.has(k.item.slice(4))){have.add(k.item.slice(4));ch=true}}
   if(w.rooms.some(r=>r.bad))return'bad room';
-  if(reach.size!==16)return'unreachable rooms';
+  if(reach.size!==w.rooms.length)return'unreachable rooms';
   if(!w.rooms[w.office].cont.some(k=>k.item==='film'))return'no film';
-  if(!w.rooms[w.boat].exits.length||!w.rooms[w.boiler].exits.length)return'no exit';
+  if(!w.rooms[w.roof].exits.some(e=>e.kind==='roof'))return'no roof';
+  for(const r of w.rooms){if(r.up!=null&&!r.exits.some(e=>e.kind==='up'))return'no up';if(r.down!=null&&!r.exits.some(e=>e.kind==='down'))return'no down'}
   return'';
 }
 
@@ -431,7 +436,8 @@ const SFX={
   ko(){noiseB(.25,.25,300);tone(180,.3,'sine',.12,55)},
   wake(){tone(260,.18,'triangle',.07,520)},
   win(){[523,659,784,1046,1318].forEach((f,i)=>tone(f,.28,'square',.06,0,i*.13))},
-  step(){noiseB(.03,.04,900)}
+  step(){noiseB(.03,.04,900)},
+  stairs(){for(let i=0;i<5;i++)noiseB(.05,.08,700+i*120,i*.09)}
 };
 const sfx=n=>{try{SFX[n]&&SFX[n]()}catch(e){}};
 function setMute(m){muted=m;store.set('lednik7_mute',m?'1':'0');if(master)master.gain.value=m?0:.55;const b=$('bMute');b.setAttribute('aria-pressed',String(m));b.setAttribute('aria-label',m?'Unmute sound':'Mute sound');$('mwave').style.display=m?'none':'';$('mx').style.display=m?'':'none';const ob=document.querySelector('[data-act=mute]');if(ob)ob.textContent=m?'Sound: off':'Sound: on'}
@@ -442,10 +448,11 @@ let P=null;
 const keys=new Set();
 let isTouch=false;try{isTouch=matchMedia('(pointer: coarse)').matches}catch(e){}
 const KT=(k,t)=>isTouch?t:k;
-function mkGuard(d){const [x,y]=d.loop[0];return{def:d,loop:d.loop,pz:d.pz,i:d.loop.length>1?1:0,x:x*TS+8,y:y*TS+8,a:Math.random()*6.28,wa:0,base:0,st:'pat',meter:0,path:[],wait:.5,t:Math.random()*5,look:0,rt:0,rp:0,lost:0,stuck:0,kt:0,lsx:0,lsy:0,moving:false,poly:null,seen:false}}
+function mkGuard(d){const [x,y]=d.loop[0];return{elite:!!d.elite,def:d,loop:d.loop,pz:d.pz,i:d.loop.length>1?1:0,x:x*TS+8,y:y*TS+8,a:Math.random()*6.28,wa:0,base:0,st:'pat',meter:0,path:[],wait:.5,t:Math.random()*5,look:0,rt:0,rp:0,lost:0,stuck:0,kt:0,lsx:0,lsy:0,moving:false,poly:null,seen:false}}
 function newRun(seed,mode){
   const w=genWorld(seed);S.w=w;S.seed=seed;
   for(const r of w.rooms){const [a,b]=RT[r.type].g;const n=r.id===w.start?1:Math.round(a+(b-a)*K.t);r.adefs=r.gdefs.slice(0,n);r.guards=r.adefs.map(mkGuard);r.visited=false;r.static=null}
+  const ne=DIFF>=7?2:1;w.elites.slice(0,ne).forEach(({room,def})=>{const r=w.rooms[room];r.adefs.push(def);r.guards.push(mkGuard(def))});
   P={route:null,hidden:null,x:2*TS+8,y:2*TS+8,fx:0,fy:1,dir:0,anim:0,moving:false,running:false,keys:[],stones:0,darts:0,pistol:false,coat:false,film:false,noiseT:0};
   S.time=0;S.lives=3;S.proj=[];S.rings=[];S.drops=[];S.search=null;S.hsig='';
   enterRoom(w.start,{x:P.x,y:P.y},{x:P.x,y:P.y});
@@ -459,10 +466,21 @@ function enterRoom(id,pos,entry){
   camStep(0,true);
   S.hsig='';
 }
+function useStairs(kind){
+  const rm=S.room;
+  if(kind==='roof'){if(P.film)win('heli');else{sfx('locked');toast("Stairs to the roof, where the helicopter will land. You won't leave without the microfilm.",4)}return}
+  const nid=kind==='up'?rm.up:rm.down,want=kind==='up'?'down':'up',nr=S.w.rooms[nid];
+  for(const g of S.guards)if(g.st==='chase'){investigate(g,P.x,P.y);g.meter=.5}
+  let pos=null;const st=nr.exits.filter(e=>e.kind===want);
+  for(const [dx,dy] of [[0,1],[-1,0],[1,0],[0,-1]])for(const e of st){if(pos)break;const x=e.x+dx,y=e.y+dy;if(x>0&&y>0&&x<TW-1&&y<TH-1&&!solidAt(nr,x,y,false)&&nr.t[y][x]!==T.STAIR)pos={x:x*TS+8,y:y*TS+8}}
+  if(!pos)pos={x:st[0].x*TS+8,y:st[0].y*TS+8};
+  sfx('stairs');enterRoom(nid,pos,pos);S.stairLock=true;S.stairCD=.7;keys.clear();S.jx=S.jy=0;
+  toast(`${kind==='up'?'Up':'Down'} to the ${FLOORS[nr.lv].name.toLowerCase()}.`,2.2);
+}
 function leaveRoom(s){
   const rm=S.room;
   for(const g of S.guards)if(g.st==='chase'){investigate(g,P.x,P.y);g.meter=.5}
-  const nid=rm.id+({l:-1,r:1,t:-GW,b:GW})[s];
+  const nid=rm.nb[s];
   const pos={x:P.x,y:P.y},en={x:P.x,y:P.y};
   if(s==='l'){pos.x=LW-10;en.x=LW-26}if(s==='r'){pos.x=10;en.x=26}if(s==='t'){pos.y=LH-10;en.y=LH-26}if(s==='b'){pos.y=10;en.y=26}
   enterRoom(nid,pos,en);
@@ -564,7 +582,7 @@ function openCont(k){
   else if(it==='stones'){P.stones+=2;toast(`Two loose stones. ${KT('Q','THROW')} tosses one to lure a guard.`)}
   else if(it==='pistol'){P.pistol=true;P.darts+=5;toast(`Tranquilizer pistol, 5 darts. Search sleeping guards for more. ${KT('Space','FIRE')} to shoot.`)}
   else if(it==='coat'){P.coat=true;toast("A guard's greatcoat. You put it on. Don't run, don't get close.",4.5)}
-  else if(it==='film'){P.film=true;toast('The microfilm! Now get out: the boiler-room tunnel or the boathouse.',5)}
+  else if(it==='film'){P.film=true;toast('The microfilm! Now find the stairs marked ВЫХОД up to the roof. A helicopter is waiting.',5)}
   sfx('item');
 }
 function interact(dt,moving){
@@ -579,14 +597,14 @@ function interact(dt,moving){
     if(tg.type==='cont'&&tg.k.searched)toast('Already searched. Empty.');
     if(tg.type==='body'&&tg.g.def.looted)toast('You already went through his pockets.');
     if(tg.type==='door'){const c=tg.e.lock;if(P.keys.includes(c)){tg.e.was=c;tg.e.lock=null;sfx('unlock');toast(`Unlocked with the ${c} key.`);S.hsig=''}else{sfx('locked');toast(`Locked. It needs the ${c} key.`)}}
-    if(tg.type==='exit'){if(P.film)win(tg.ex.kind);else{sfx('locked');toast("You won't leave without the microfilm.")}}
+    if(tg.type==='exit'){useStairs(tg.ex.kind);return}
   }
   let pr='';
   if(tg){const E=KT('E','SEARCH');
     if(tg.type==='body')pr=tg.g.def.looted?'Searched guard':`Hold ${E}: search the guard`;
     else if(tg.type==='cont')pr=tg.k.searched?`${cap(CNAME[tg.k.kind])}: empty`:`Hold ${E}: search ${CNAME[tg.k.kind]}`;
     else if(tg.type==='door')pr=P.keys.includes(tg.e.lock)?`${KT('E','OPEN')}: unlock ${tg.e.lock} door`:`Locked: ${tg.e.lock} key needed`;
-    else pr=`${KT('E','OPEN')}: ${tg.ex.kind==='boat'?'take the boat':'drop into the tunnel'}`}
+    else pr=tg.ex.kind==='roof'?'Stairs to the roof and the helicopter':tg.ex.kind==='up'?`Stairs up to the ${FLOORS[S.room.lv+1].name.toLowerCase()}`:`Stairs down to the ${FLOORS[S.room.lv-1].name.toLowerCase()}`}
   const hs=findHide();if(hs)pr=pr?pr+` · ${KT('H','HIDE')}: hide`:`${KT('H','HIDE')}: hide ${hs.label}`;
   setPrompt(pr);
 }
@@ -657,6 +675,10 @@ function updPlayer(dt){
     if(P.route){if(Math.hypot(P.x-ox,P.y-oy)<sp*dt*.25){P.route.stuck+=dt;if(P.route.stuck>.5)P.route=null}else P.route.stuck=0}
   }else P.noiseT=0;
   const rm=S.room;
+  {const tx=Math.floor(P.x/TS),ty=Math.floor(P.y/TS);const on=tx>=0&&ty>=0&&tx<TW&&ty<TH&&rm.t[ty][tx]===T.STAIR;
+   if(S.stairCD>0)S.stairCD-=dt;
+   if(on&&!S.stairLock&&!(S.stairCD>0)){S.stairLock=true;const e=rm.exits.find(e=>e.x===tx&&e.y===ty);if(e){P.route=null;useStairs(e.kind);if(S.mode!=='play'||S.room!==rm)return}}
+   if(!on)S.stairLock=false}
   if(P.x<2&&rm.edges.l)return leaveRoom('l');if(P.x>LW-2&&rm.edges.r)return leaveRoom('r');
   if(P.y<2&&rm.edges.t)return leaveRoom('t');if(P.y>LH-2&&rm.edges.b)return leaveRoom('b');
   interact(dt,moving);
@@ -669,14 +691,14 @@ function updPlayer(dt){
   if(S.throwP){if(P.stones<=0)toast('No stones to throw.');else{P.stones--;S.proj.push({k:'stone',x:P.x,y:P.y,vx:P.fx*170,vy:P.fy*170,d:0,max:112});sfx('throw')}}
 }
 /* auto-aim: nearest guard in clear view within range, favouring the way you face */
-function aimTarget(){let best=null,bs=1e9;for(const g of S.guards){if(g.st==='ko')continue;const dx=g.x-P.x,dy=g.y-P.y,d=Math.hypot(dx,dy);if(d>K.aim||!los(P.x,P.y,g.x,g.y))continue;const da=Math.abs(wrapA(Math.atan2(dy,dx)-Math.atan2(P.fy,P.fx)));const sc=d+da*40;if(sc<bs){bs=sc;best=g}}return best}
+function aimTarget(){let best=null,bs=1e9;for(const g of S.guards){if(g.st==='ko'||g.elite)continue;const dx=g.x-P.x,dy=g.y-P.y,d=Math.hypot(dx,dy);if(d>K.aim||!los(P.x,P.y,g.x,g.y))continue;const da=Math.abs(wrapA(Math.atan2(dy,dx)-Math.atan2(P.fy,P.fx)));const sc=d+da*40;if(sc<bs){bs=sc;best=g}}return best}
 function updProj(dt){
   for(let i=S.proj.length-1;i>=0;i--){const p=S.proj[i];let dead=false;const steps=Math.ceil(Math.hypot(p.vx,p.vy)*dt/2);
     if(p.tg&&p.tg.st!=='ko'){const a=Math.atan2(p.tg.y-p.y,p.tg.x-p.x);p.vx=Math.cos(a)*300;p.vy=Math.sin(a)*300}
     for(let s=0;s<steps&&!dead;s++){const nx=p.x+p.vx*dt/steps,ny=p.y+p.vy*dt/steps;p.d+=Math.hypot(nx-p.x,ny-p.y);
       if(nx<0||ny<0||nx>=LW||ny>=LH||visBlock(S.room,Math.floor(nx/TS),Math.floor(ny/TS))){dead=true;break}
       p.x=nx;p.y=ny;
-      if(p.k==='dart')for(const g of S.guards)if(g.st!=='ko'&&Math.hypot(g.x-p.x,g.y-p.y)<9){ko(g);dead=true;break}
+      if(p.k==='dart')for(const g of S.guards)if(g.st!=='ko'&&Math.hypot(g.x-p.x,g.y-p.y)<9){if(g.elite){toast('The dart glances off the red officer. He felt that.');sfx('locked');if(g.st!=='chase'){investigate(g,P.x,P.y);g.meter=Math.max(g.meter,.7)}}else ko(g);dead=true;break}
       if(p.d>=p.max)dead=true}
     if(dead){if(p.k==='stone'){S.drops.push({x:p.x,y:p.y});noise(p.x,p.y,112);sfx('land')}S.proj.splice(i,1)}}
 }
@@ -740,6 +762,12 @@ function renderStatic(rm){
         else if(vv==='crate'){px(X+1,Y+1,14,14,'#6a5536');px(X+1,Y+1,14,1,'#8a7350');px(X+1,Y+14,14,1,'#4b3c26');px(X+2,Y+7,12,1,'#4b3c26');px(X+7,Y+2,1,12,'#4b3c26');if(rm.outdoor)px(X+1,Y+1,14,3,'#c4d2e4')}
         else if(vv==='screen'){px(X+1,Y+2,14,12,'#a2adbb');px(X+5,Y+2,1,12,'#7d8897');px(X+10,Y+2,1,12,'#7d8897')}
         break;
+      case T.STAIR:{const k=vv.replace(/\d/,''),n=+vv.slice(-1),dn=k==='down',rf=k==='roof';
+        px(X,Y,16,16,dn?'#0c1018':'#262e3d');
+        for(let i=0;i<4;i++){const yy=Y+i*4;const sh=dn?(n<2?i:i+4):(n<2?7-i:3-i);px(X,yy,16,4,dn?`rgb(${40-sh*4},${46-sh*4},${60-sh*5})`:rf?`rgb(${70+sh*10},${86+sh*10},${110+sh*12})`:`rgb(${50+sh*8},${58+sh*8},${76+sh*9})`);px(X,yy,16,1,dn?'#3a4458':rf?'#c9d8ee':'#7d8aa3')}
+        px(n%2?X+15:X,Y,1,16,'#10141c');
+        if(n===0){const lbl=k==='up'?'ВВЕРХ':k==='down'?'ВНИЗ':'ВЫХОД',w=txtW(lbl)+4;px(X+16-w/2|0,Y-9,w,8,rf?'#7d2320':'#c9d2dc');drawTxt(f,lbl,(X+16-w/2|0)+2,Y-8,rf?'#eadfc4':'#1b2433')}
+        break}
       case T.PIL:if(vv==='post'){px(X+6,Y+12,4,3,'rgba(0,0,0,.4)');px(X+7,Y+3,2,11,'#252a33');px(X+5,Y+1,6,3,'#e8d38c')}else{px(X+2,Y+2,12,12,'#3a465a');px(X+2,Y+2,12,2,'#4e5d75');px(X+3,Y+14,12,2,'rgba(0,0,0,.4)')}break;
       case T.WATER:px(X,Y,16,16,'#0d1b2e');for(let i=0;i<2;i++)px(X+rnd(12),Y+rnd(15),4,1,'#1a3152');if(vv==='ice'){px(X+2+rnd(3),Y+3+rnd(3),8,6,'#8ea6c2');px(X+3+rnd(2),Y+4,4,1,'#c2d2e4')}break;
       case T.COAL:px(X+1,Y+5,14,10,'#0d0d10');for(let i=0;i<6;i++)px(X+2+rnd(12),Y+6+rnd(8),2,2,'#2a2a30');break;
@@ -809,7 +837,7 @@ function draw(){
       if((P.pistol&&P.darts>0)||P.stones>0){f.fillStyle='rgba(207,228,255,.8)';f.fillRect(Math.round(P.x+P.fx*13),Math.round(P.y+P.fy*13),1,1);f.fillRect(Math.round(P.x+P.fx*17),Math.round(P.y+P.fy*17),1,1)}}
     else{const g=e.g,x=Math.round(g.x),y=Math.round(g.y);
       if(g.st==='ko'){f.fillStyle='rgba(0,0,0,.4)';const cs=CSZ();f.fillRect(x-8*cs,y+1,16*cs,4);f.save();f.translate(x+8*cs,y+4-12*cs);f.rotate(Math.PI/2);f.drawImage(SPR.guard[0][2],0,0,12*cs,16*cs);f.restore();const zt=RM?0:Math.floor(g.t*2)%3;drawTxt(f,'Z',x+5*cs,y-6-6*cs-zt,'#cfe4ff');if(!g.def.looted&&(RM||(performance.now()/500)%2<1.3)){f.fillStyle='#ffe39a';f.fillRect(x-1,y+5,2,2)}continue}
-      f.fillStyle='rgba(0,0,0,.4)';const cs=CSZ();f.fillRect(x-5*cs,y+4,10*cs,3);const fr=g.moving?(Math.floor(g.t*6)%2):0;f.drawImage(SPR.guard[fr][dir4(g.a)],x-6*cs,y+5-16*cs,12*cs,16*cs)}
+      f.fillStyle='rgba(0,0,0,.4)';const cs=CSZ();f.fillRect(x-5*cs,y+4,10*cs,3);const fr=g.moving?(Math.floor(g.t*6)%2):0;f.drawImage(SPR[g.elite?'elite':'guard'][fr][dir4(g.a)],x-6*cs,y+5-16*cs,12*cs,16*cs)}
   }
   for(const p of S.proj){f.fillStyle=p.k==='dart'?'#ffe39a':'#9aa3b0';f.fillRect(Math.round(p.x)-1,Math.round(p.y)-1,p.k==='dart'?2:3,p.k==='dart'?2:3)}
   if(rm.outdoor)for(const s of S.snow){f.fillStyle='rgba(225,236,250,.85)';f.fillRect(Math.round(s.x),Math.round(s.y),s.s,s.s)}
@@ -840,7 +868,7 @@ function updHUD(){
   const sig=[S.lives,P.keys.join(),P.stones,P.darts,P.pistol,P.coat,P.film,S.room.id,S.seed,S.w.edges.map(e=>e.lock?1:0).join('')].join('|');
   if(sig!==S.hsig){S.hsig=sig;
     $('lives').innerHTML=[0,1,2].map(i=>`<i class="pip${i<S.lives?'':' off'}"></i>`).join('');$('lives').setAttribute('aria-label',`Lives: ${S.lives} of 3`);
-    $('room').textContent=S.room.name;$('seed').textContent='Seed '+S.seed+' · Lv '+DIFF;
+    $('room').textContent=FLOORS[S.room.lv].name+' · '+S.room.name;$('seed').textContent='Seed '+S.seed+' · Lv '+DIFF;
     const it=[];P.keys.forEach(c=>it.push(`<span class="chip"><i style="background:${KEYC[c]}"></i>${KEYN[c]} key</span>`));
     if(P.stones)it.push(`<span class="chip"><i style="background:#9aa3b0;border-radius:50%"></i>Stones ${P.stones}</span>`);
     if(P.pistol||P.darts)it.push(`<span class="chip"><i style="background:#ffe39a"></i>${P.pistol?'Pistol':'Darts'} ${P.darts}</span>`);
@@ -855,14 +883,15 @@ function updHUD(){
 }
 const mini=$('mini'),mc=mini.getContext('2d');
 function drawMini(){
-  if(!S.w)return;const dpr=window.devicePixelRatio||1,sz=mini._sz||60;mini.width=Math.round(sz*dpr);mini.height=Math.round(sz*dpr);
-  mc.setTransform(dpr,0,0,dpr,0,0);mc.clearRect(0,0,sz,sz);const cs=sz/4,pad=Math.max(2,cs*.16);
-  for(const r of S.w.rooms){const x=r.gx*cs,y=r.gy*cs;mc.fillStyle=r.visited?(r===S.room?'#3a5a86':'#22324e'):'#0f1729';mc.fillRect(x+pad,y+pad,cs-pad*2,cs-pad*2);
-    if(r.visited){const dot=(c)=>{mc.fillStyle=c;mc.fillRect(x+cs/2-2,y+cs/2-2,4,4)};if(r.type==='office')dot('#ffd27a');if(r.type==='boat'||r.type==='boiler')dot('#9cc4ec')}
+  if(!S.w||!S.room)return;const dpr=window.devicePixelRatio||1,sz=mini._sz||60;mini.width=Math.round(sz*dpr);mini.height=Math.round(sz*dpr);
+  mc.setTransform(dpr,0,0,dpr,0,0);mc.clearRect(0,0,sz,sz);const f=S.room.lv,F=S.w.fl[f],cs=sz/3,ox=(3-F.w)/2*cs,oy=(3-F.h)/2*cs,pad=Math.max(2,cs*.16);
+  const rs=S.w.rooms.filter(r=>r.lv===f);
+  for(const r of rs){const x=ox+r.gx*cs,y=oy+r.gy*cs;mc.fillStyle=r.visited?(r===S.room?'#3a5a86':'#22324e'):'#0f1729';mc.fillRect(x+pad,y+pad,cs-pad*2,cs-pad*2);
+    if(r.visited){const dot=(c,dx)=>{mc.fillStyle=c;mc.fillRect(x+cs/2-2+dx,y+cs/2-2,4,4)};if(r.type==='office')dot('#ffd27a',0);if(r.up!=null)dot('#9cc4ec',-3);if(r.down!=null)dot('#5d7296',3);if(r.id===S.w.roof)dot('#ff9a5a',0)}
     if(r===S.room){mc.strokeStyle='#9cc4ec';mc.lineWidth=1.5;mc.strokeRect(x+pad-1,y+pad-1,cs-pad*2+2,cs-pad*2+2)}}
-  for(const e of S.w.edges){const a=S.w.rooms[e.a],b=S.w.rooms[e.b];if(!a.visited&&!b.visited)continue;const x=(a.gx+b.gx+1)/2*cs,y=(a.gy+b.gy+1)/2*cs,h=a.gy===b.gy;
+  for(const e of S.w.edges){if(e.stair)continue;const a=S.w.rooms[e.a],b=S.w.rooms[e.b];if(a.lv!==f||(!a.visited&&!b.visited))continue;const x=ox+(a.gx+b.gx+1)/2*cs,y=oy+(a.gy+b.gy+1)/2*cs,h=a.gy===b.gy;
     mc.fillStyle=e.lock?KEYC[e.lock]:'#5d7296';if(h)mc.fillRect(x-pad,y-1.5,pad*2,3);else mc.fillRect(x-1.5,y-pad,3,pad*2)}
-  const vis=S.w.rooms.filter(r=>r.visited).length;mini.setAttribute('aria-label',`Minimap: ${vis} of 16 rooms visited, now in ${S.room?S.room.name:''}`);
+  const vis=rs.filter(r=>r.visited).length;mini.setAttribute('aria-label',`Minimap of the ${FLOORS[f].name.toLowerCase()}: ${vis} of ${rs.length} rooms visited, now in ${S.room.name}`);
 }
 
 /* ================= overlays ================= */
@@ -874,7 +903,7 @@ const HOW=()=>`<ul>
 <li><b>Hide</b> in lockers and crates or under tables, desks and beds: <kbd>H</kbd>${isTouch?' or HIDE':''}. Guards can't see you there, but one who walks right up to your spot will find you.</li>
 <li><b>Search</b>: hold <kbd>E</kbd>${isTouch?' or SEARCH':''} for 1.5 s at a locker or footlocker, or at a knocked-out guard to go through his pockets for darts, stones or keys. It makes a little noise. <kbd>E</kbd> also unlocks doors and uses exits.</li>
 <li><b>Fire</b> a tranquilizer dart: ${isTouch?'tap a guard, or ':''}<kbd>Space</kbd>${isTouch?' / FIRE':''}. It locks on to the guard in the red brackets, the nearest one in clear view. <b>Throw</b> a stone to lure guards: <kbd>Q</kbd>${isTouch?' or THROW':''}. Stones go the way you face.</li>
-<li>Stay out of flashlight cones: the bar over a guard fills faster the closer you are. In the greatcoat, guards only notice you close up or running.</li>
+<li>Officers in red guard the upper floor: darts don't work on them, so sneak past or hide. Stay out of flashlight cones: the bar over a guard fills faster the closer you are. In the greatcoat, guards only notice you close up or running.</li>
 <li>The magnifier button${isTouch?'':' (or <kbd>Z</kbd>)'} switches between the whole room and a close camera that follows you. Arrows at the edge point to guards out of view. <kbd>P</kbd> pauses, <kbd>M</kbd> mutes. Get caught three times and it's over.</li></ul>`;
 const DWORD=d=>d<=2?'Sleepy guards':d<=4?'Lax':d<=6?'Watchful':d<=8?'Sharp-eyed':d===9?'Ruthless':"The commandant's own";
 function bestTxt(){const b=parseFloat(store.get('lednik7_best_'+DIFF));return b>0?`Best escape on level ${DIFF}: <b>${fmt(b)}</b>`:`No escapes on level ${DIFF} yet.`}
@@ -882,7 +911,7 @@ function showTitle(){
   S.mode='title';
   showOv(`<canvas id="logo" aria-label="ЛЕДНИК-7"></canvas>
 <p class="sub">Lednik-7 isolator · Vetrov Island, White Sea · winter</p>
-<p>You are a Western agent, captured and locked in a cell. Your microfilm is in the commandant's safe. Sneak through the prison, take it back, and get out through the boiler-room tunnel or the boathouse.</p>
+<p>You are a Western agent, captured and locked in a cell. Your microfilm is in the commandant's safe. Climb from the basement cells through the ground floor to the upper floor, take it back, then take the roof stairs (ВЫХОД) to a waiting helicopter.</p>
 ${HOW()}
 <div class="seedrow"><label for="seedIn">Seed</label><input id="seedIn" inputmode="numeric" autocomplete="off" maxlength="6" value="${S.seed}" aria-describedby="seedHelp"><button class="btn" data-act="reroll">New seed</button></div>
 <p class="muted" id="seedHelp">Same seed, same prison. Share it to race a friend.</p>
@@ -898,7 +927,7 @@ function pause(reason){if(S.mode!=='play')return;S.mode='pause';keys.clear();S.t
 <div class="acts"><button class="btn primary" data-act="resume">Resume</button><button class="btn" data-act="restart">Restart this seed</button><button class="btn" data-act="newrun">New prison</button><button class="btn" data-act="mute">${muted?'Sound: off':'Sound: on'}</button></div>`)}
 function showCaught(){showOv(`<h2>Caught</h2><p>A guard drags you back to the doorway.${P.coat?'':' If you had the greatcoat, it is gone.'}</p><p>Lives left: <b>${S.lives}</b></p><div class="acts"><button class="btn primary" data-act="resume">Continue</button></div>`)}
 function showOver(){showOv(`<h2>Back in the cell</h2><p>Three times caught. They double the guard and throw away the key.</p><p class="muted">Seed ${S.seed} · ${fmt(S.time)}</p><div class="acts"><button class="btn primary" data-act="restart">Try this seed again</button><button class="btn" data-act="newrun">New prison</button><button class="btn" data-act="title">Title screen</button></div>`)}
-function showWon(nb,best){showOv(`<h2>Escaped!</h2><p>${S.winKind==='boat'?'You row out between the ice floes. By dawn the island is a grey line behind you.':'You crawl through the old tunnel and come up in the snow beyond the wire.'} The microfilm is safe.</p><p class="big">${fmt(S.time)}</p><p>${nb?'A new best time.':'Best: '+fmt(best)} · Seed <b>${S.seed}</b> · Level ${DIFF} · Lives left ${S.lives}</p><div class="acts"><button class="btn primary" data-act="newrun">New prison</button><button class="btn" data-act="restart">Replay this seed</button><button class="btn" data-act="title">Title screen</button></div>`)}
+function showWon(nb,best){showOv(`<h2>Escaped!</h2><p>You burst onto the frozen roof. Rotors already turning, an unmarked helicopter drops a rope ladder, and the island shrinks into the dark. The microfilm is safe.</p><p class="big">${fmt(S.time)}</p><p>${nb?'A new best time.':'Best: '+fmt(best)} · Seed <b>${S.seed}</b> · Level ${DIFF} · Lives left ${S.lives}</p><div class="acts"><button class="btn primary" data-act="newrun">New prison</button><button class="btn" data-act="restart">Replay this seed</button><button class="btn" data-act="title">Title screen</button></div>`)}
 const rndSeed=()=>100000+Math.floor(Math.random()*900000);
 function startPlay(){hideOv();S.mode='play';last=performance.now();S.hsig=''}
 ov.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)return;initAudio();const a=b.dataset.act;
@@ -943,6 +972,7 @@ let tapId=null,lastTap={t:0,x:0,y:0},tapRun=false,lastSet=0;
 function stagePt(e){const r=cv.getBoundingClientRect(),vw=LW/ZOOM,vh=LH/ZOOM;return{x:CAM.x+(e.clientX-r.left)/r.width*vw,y:CAM.y+(e.clientY-r.top)/r.height*vh}}
 $('stage').addEventListener('pointerdown',e=>{if(S.mode!=='play'||FOLDED)return;e.preventDefault();initAudio();const p=stagePt(e),now=performance.now();
   const hit=P.pistol&&P.darts>0&&!P.hidden?S.guards.find(g=>g.st!=='ko'&&Math.hypot(g.x-p.x,g.y+5-8*CSZ()-p.y)<8*CSZ()+5):null;
+  if(hit&&hit.elite){toast("Darts won't stop the officers in red. Avoid them.");return}
   if(hit){S.shootAt=hit;S.fireP=true;lastTap={t:0,x:0,y:0};return}
   tapRun=now-lastTap.t<350&&Math.hypot(p.x-lastTap.x,p.y-lastTap.y)<24;lastTap={t:now,x:p.x,y:p.y};tapId=e.pointerId;try{$('stage').setPointerCapture(tapId)}catch(_){}setTarget(p.x,p.y,tapRun);lastSet=now});
 $('stage').addEventListener('pointermove',e=>{if(e.pointerId!==tapId||S.mode!=='play')return;const now=performance.now();if(now-lastSet<120)return;lastSet=now;const p=stagePt(e);setTarget(p.x,p.y,tapRun)});
