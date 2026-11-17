@@ -331,9 +331,18 @@ function tryBuild(rm,R,opt,plain){
     if(!ok)return false}
   if(ty==='office'){let ok=false;for(const [x,y] of shufA([[1,1],[18,1],[1,12],[18,12],[2,1],[17,1]],R))if(addC(x,y,'safe')){ok=true;break}if(!ok)return false;o.floor='wood'}
   if(ty==='yard'){o.floor='snow';o.outdoor=true}
+  /* chambers: split the room into 6 smaller spaces joined by 2-tile gaps (a spanning tree plus a few loops) */
+  const maze=ty!=='cells'&&ty!=='yard'&&!opt.start;
+  if(maze){
+    const xs=[[1,6],[8,11],[13,18]],ys=[[1,7],[9,12]],mw=new Set(),W=(x,y)=>{if(set(x,y,T.W))mw.add(y*TW+x)};
+    for(let y=1;y<=12;y++){W(7,y);W(12,y)}for(let x=1;x<=18;x++)W(x,8);
+    const ed=[];for(let r=0;r<2;r++)for(let c=0;c<3;c++){if(c<2)ed.push({a:r*3+c,b:r*3+c+1,tiles:[...Array(ys[r][1]-ys[r][0]+1)].map((_,i)=>[c?12:7,ys[r][0]+i])});if(r<1)ed.push({a:c,b:3+c,tiles:[...Array(xs[c][1]-xs[c][0]+1)].map((_,i)=>[xs[c][0]+i,8])})}
+    const par=[0,1,2,3,4,5],fd=a=>par[a]===a?a:(par[a]=fd(par[a]));
+    for(const e of shufA(ed,R)){const tree=fd(e.a)!==fd(e.b);if(tree)par[fd(e.a)]=fd(e.b);if(tree||R()<.3){const k=ri(e.tiles.length-1);for(const [x,y] of [e.tiles[k],e.tiles[k+1]])if(mw.has(y*TW+x)){t[y][x]=T.F;mw.delete(y*TW+x)}}}
+  }
   /* furnishings */
   if(!plain){
-    partition({cells:2,mess:2,laundry:3,infirmary:3,barracks:2,office:2,yard:3,boiler:3,boat:2,store:2,hall:5}[ty]||2);
+    if(!maze)partition({cells:2,mess:2,laundry:3,infirmary:3,barracks:2,office:2,yard:3,boiler:3,boat:2,store:2,hall:5}[ty]||2);
     if(ty==='cells'){const by=8+ri(2);for(let x=3;x<=6;x++)set(x,by,T.LOW,'bench');for(let x=13;x<=16;x++)set(x,by,T.LOW,'bench');let n=2+ri(2),tr=0;while(n>0&&tr++<40){if(addC(1+ri(18),12,'locker'))n--}addWallC('foot',1);cover(2)}
     if(ty==='mess'){const y1=3+ri(2),y2=8+ri(2);for(const y of [y1,y2])for(const [a,b] of [[3,7],[12,16]])for(let x=a;x<=b;x++)set(x,y,T.LOW,'table');for(let x=13;x<=17;x++)set(x,1,T.LOW,'counter');addWallC('cabinet',1);addWallC('locker',1);addWallC('foot',1);cover(1)}
     if(ty==='laundry'){for(const x of [2,3,5,6,13,14,16,17])set(x,1,T.TALL,'washer');rect(4,7,2,2,T.LOW,'tub');rect(14,7,2,2,T.LOW,'tub');addAnyC('basket',2);addWallC('locker',1);cover(2)}
