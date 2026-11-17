@@ -137,7 +137,7 @@ button{font:inherit;touch-action:manipulation}
 /* ================= constants ================= */
 const LW=320,LH=224,TS=16,TW=20,TH=14,GW=4,GH=4;
 let DIFF=6,K={};
-const ZOOMS=[1,1.5,2];let ZOOM=2;const CAM={x:0,y:0};
+const ZOOMS=[1,2];let ZOOM=1;const CSZ=()=>ZOOM===1?2:1;const CAM={x:0,y:0};
 function camTarget(){const vw=LW/ZOOM,vh=LH/ZOOM;return{x:clamp(P.x-vw/2,0,LW-vw),y:clamp(P.y-10-vh/2,0,LH-vh)}}
 function camStep(dt,snap){if(!P)return;const t=camTarget();if(snap||RM){CAM.x=t.x;CAM.y=t.y;return}const k=1-Math.exp(-7*dt);CAM.x+=(t.x-CAM.x)*k;CAM.y+=(t.y-CAM.y)*k}
 function setDiff(d){DIFF=clamp(Math.round(d)||6,1,10);const t=(DIFF-1)/9;K={t,fov:1.05+.5*t,r:84+42*t,rc:120+40*t,r0:.4+.6*t,r1:1.6+1.9*t,sp:22+10*t,si:30+18*t,sc:54+21*t,ko:24-14*t,lost:3+2.5*t,wake:.2+.4*t,call:DIFF>=5,glance:DIFF>=4,gi:9-5*t,noise:66+32*t,alert:150+130*t,aim:180-50*t,find:22+14*t}}
@@ -292,6 +292,12 @@ function tryBuild(rm,R,opt,plain){
   const addWallC=(kind,n)=>{let tr=0;while(n>0&&tr++<80){const [x,y]=wallSpot();if(addC(x,y,kind))n--}};
   const addAnyC=(kind,n)=>{let tr=0;while(n>0&&tr++<80){if(addC(2+ri(16),2+ri(10),kind))n--}};
   const rect=(x0,y0,w,h,c,vv)=>{for(let y=y0;y<y0+h;y++)for(let x=x0;x<x0+w;x++)set(x,y,c,vv)};
+  const partition=n=>{for(let i=0;i<n;i++){const hz=R()<.5,len=4+ri(6);let x0,y0;if(hz){x0=2+ri(16-len);y0=3+ri(8)}else{x0=3+ri(14);y0=2+ri(10-Math.min(len,8))}
+      const L=hz?len:Math.min(len,8),tiles=[];let ok=true;
+      for(let k=0;k<L&&ok;k++){const x=hz?x0+k:x0,y=hz?y0:y0+k;if(!free(x,y)){ok=false;break}
+        for(const d of [1,2])for(const sg of [-1,1]){const px=hz?x:x+sg*d,py=hz?y+sg*d:y;if(px<1||py<1||px>18||py>12)continue;if(t[py][px]!==T.F){ok=false}}
+        tiles.push([x,y])}
+      if(ok&&tiles.length>=3)tiles.forEach(([x,y])=>{t[y][x]=T.W})}};
   const cover=n=>{const y0=ty==='cells'?6:3;for(let i=0;i<n;i++){const x=2+ri(15),y=y0+ri(11-y0);if(R()<.5)rect(x,y,2,1,T.TALL,'crate');else set(x,y,T.TALL,'crate')}};
   const o={floor:'tile',rug:null,broken:null,lamps:[],windows:[],outdoor:false,extraSign:null,banner:false};
   const ty=rm.type;
@@ -321,6 +327,7 @@ function tryBuild(rm,R,opt,plain){
   if(ty==='yard'){o.floor='snow';o.outdoor=true}
   /* furnishings */
   if(!plain){
+    partition({cells:2,mess:2,laundry:3,infirmary:3,barracks:2,office:2,yard:3,boiler:3,boat:2,store:2,hall:5}[ty]||2);
     if(ty==='cells'){const by=8+ri(2);for(let x=3;x<=6;x++)set(x,by,T.LOW,'bench');for(let x=13;x<=16;x++)set(x,by,T.LOW,'bench');let n=2+ri(2),tr=0;while(n>0&&tr++<40){if(addC(1+ri(18),12,'locker'))n--}addWallC('foot',1);cover(2)}
     if(ty==='mess'){const y1=3+ri(2),y2=8+ri(2);for(const y of [y1,y2])for(const [a,b] of [[3,7],[12,16]])for(let x=a;x<=b;x++)set(x,y,T.LOW,'table');for(let x=13;x<=17;x++)set(x,1,T.LOW,'counter');addWallC('cabinet',1);addWallC('locker',1);addWallC('foot',1);cover(1)}
     if(ty==='laundry'){for(const x of [2,3,5,6,13,14,16,17])set(x,1,T.TALL,'washer');rect(4,7,2,2,T.LOW,'tub');rect(14,7,2,2,T.LOW,'tub');addAnyC('basket',2);addWallC('locker',1);cover(2)}
@@ -798,22 +805,22 @@ function draw(){
   const ents=[...S.guards.map(g=>({g,y:g.st==='ko'?g.y-6:g.y})),{p:1,y:P.y}].sort((a,b)=>a.y-b.y);
   for(const e of ents){
     if(e.p&&P.hidden){const x=Math.round(P.x),y=Math.round(P.y),bl=!RM&&(performance.now()%2600)<140;if(!bl){f.fillStyle='#e8f1ff';f.fillRect(x-3,y-2,2,1);f.fillRect(x+1,y-2,2,1);f.fillStyle='#1a1410';f.fillRect(x-2,y-2,1,1);f.fillRect(x+2,y-2,1,1)}continue}
-    if(e.p){const x=Math.round(P.x),y=Math.round(P.y);f.fillStyle='rgba(0,0,0,.4)';f.fillRect(x-5,y+4,10,3);const fr=P.moving?(Math.floor(P.anim)%2):0;f.drawImage(SPR[P.coat?'coat':'pris'][fr][P.dir],x-6,y-11);
+    if(e.p){const x=Math.round(P.x),y=Math.round(P.y);f.fillStyle='rgba(0,0,0,.4)';const cs=CSZ();f.fillRect(x-5*cs,y+4,10*cs,3);const fr=P.moving?(Math.floor(P.anim)%2):0;f.drawImage(SPR[P.coat?'coat':'pris'][fr][P.dir],x-6*cs,y+5-16*cs,12*cs,16*cs);
       if((P.pistol&&P.darts>0)||P.stones>0){f.fillStyle='rgba(207,228,255,.8)';f.fillRect(Math.round(P.x+P.fx*13),Math.round(P.y+P.fy*13),1,1);f.fillRect(Math.round(P.x+P.fx*17),Math.round(P.y+P.fy*17),1,1)}}
     else{const g=e.g,x=Math.round(g.x),y=Math.round(g.y);
-      if(g.st==='ko'){f.fillStyle='rgba(0,0,0,.4)';f.fillRect(x-8,y+1,16,4);f.save();f.translate(x+8,y-3);f.rotate(Math.PI/2);f.drawImage(SPR.guard[0][2],0,0);f.restore();const zt=RM?0:Math.floor(g.t*2)%3;drawTxt(f,'Z',x+5,y-12-zt,'#cfe4ff');if(!g.def.looted&&(RM||(performance.now()/500)%2<1.3)){f.fillStyle='#ffe39a';f.fillRect(x-1,y+5,2,2)}continue}
-      f.fillStyle='rgba(0,0,0,.4)';f.fillRect(x-5,y+4,10,3);const fr=g.moving?(Math.floor(g.t*6)%2):0;f.drawImage(SPR.guard[fr][dir4(g.a)],x-6,y-11)}
+      if(g.st==='ko'){f.fillStyle='rgba(0,0,0,.4)';const cs=CSZ();f.fillRect(x-8*cs,y+1,16*cs,4);f.save();f.translate(x+8*cs,y+4-12*cs);f.rotate(Math.PI/2);f.drawImage(SPR.guard[0][2],0,0,12*cs,16*cs);f.restore();const zt=RM?0:Math.floor(g.t*2)%3;drawTxt(f,'Z',x+5*cs,y-6-6*cs-zt,'#cfe4ff');if(!g.def.looted&&(RM||(performance.now()/500)%2<1.3)){f.fillStyle='#ffe39a';f.fillRect(x-1,y+5,2,2)}continue}
+      f.fillStyle='rgba(0,0,0,.4)';const cs=CSZ();f.fillRect(x-5*cs,y+4,10*cs,3);const fr=g.moving?(Math.floor(g.t*6)%2):0;f.drawImage(SPR.guard[fr][dir4(g.a)],x-6*cs,y+5-16*cs,12*cs,16*cs)}
   }
   for(const p of S.proj){f.fillStyle=p.k==='dart'?'#ffe39a':'#9aa3b0';f.fillRect(Math.round(p.x)-1,Math.round(p.y)-1,p.k==='dart'?2:3,p.k==='dart'?2:3)}
   if(rm.outdoor)for(const s of S.snow){f.fillStyle='rgba(225,236,250,.85)';f.fillRect(Math.round(s.x),Math.round(s.y),s.s,s.s)}
   // overlays: rings, meters, icons
   for(const r of S.rings){const k=RM?1:Math.min(1,r.t/.35);f.strokeStyle=`rgba(207,228,255,${.45*(1-r.t/.6)})`;f.lineWidth=1;f.beginPath();f.arc(r.x,r.y,Math.max(1,r.r*k),0,6.283);f.stroke()}
   for(const g of S.guards){if(g.st==='ko')continue;const x=Math.round(g.x),y=Math.round(g.y);
-    if(g.st==='chase')drawTxt(f,'!',x,y-19,'#ff5a4a');else if(g.st==='inv')drawTxt(f,'?',x-1,y-19,'#ffd27a');
-    if(g.meter>0.02&&g.st!=='chase'){f.fillStyle='#0a0f1a';f.fillRect(x-7,y-14,14,3);f.fillStyle=g.meter>.6?'#ff7a4a':'#ffd27a';f.fillRect(x-6,y-13,Math.round(12*g.meter),1)}}
-  if(S.mode==='play'&&P.pistol&&P.darts>0&&!P.hidden){const g=aimTarget();if(g){const x=Math.round(g.x),y=Math.round(g.y);f.fillStyle='#ff5a4a';const cy=y-3;for(const [sx,sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){const X=x+sx*9,Y=cy+sy*10;f.fillRect(sx<0?X:X-2,Y,3,1);f.fillRect(X,sy<0?Y:Y-2,1,3)}}}
+    const top=y+5-16*CSZ();if(g.st==='chase')drawTxt(f,'!',x,top-8,'#ff5a4a');else if(g.st==='inv')drawTxt(f,'?',x-1,top-8,'#ffd27a');
+    if(g.meter>0.02&&g.st!=='chase'){f.fillStyle='#0a0f1a';f.fillRect(x-7,top-3,14,3);f.fillStyle=g.meter>.6?'#ff7a4a':'#ffd27a';f.fillRect(x-6,top-2,Math.round(12*g.meter),1)}}
+  if(S.mode==='play'&&P.pistol&&P.darts>0&&!P.hidden){const g=aimTarget();if(g){const x=Math.round(g.x),y=Math.round(g.y);f.fillStyle='#ff5a4a';const cs=CSZ(),cy=y+5-8*cs;for(const [sx,sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){const X=x+sx*(6*cs+3),Y=cy+sy*(8*cs+2);f.fillRect(sx<0?X:X-2,Y,3,1);f.fillRect(X,sy<0?Y:Y-2,1,3)}}}
   if(P.route&&P.route.mark){const m=P.route.mark,x=Math.round(clamp(m.x,4,LW-4)),y=Math.round(clamp(m.y,4,LH-4)),c=P.route.run?'#ff9a5a':'#9cc4ec';f.fillStyle=c;f.fillRect(x-3,y,2,1);f.fillRect(x+2,y,2,1);f.fillRect(x,y-3,1,2);f.fillRect(x,y+2,1,2)}
-  if(S.search){const x=Math.round(P.x),y=Math.round(P.y);f.fillStyle='#0a0f1a';f.fillRect(x-9,y-17,18,4);f.fillStyle='#9cc4ec';f.fillRect(x-8,y-16,Math.round(16*S.search.t/(S.search.dur||1.5)),2)}
+  if(S.search){const x=Math.round(P.x),y=Math.round(P.y);f.fillStyle='#0a0f1a';const sy=y+5-16*CSZ()-6;f.fillRect(x-9,sy,18,4);f.fillStyle='#9cc4ec';f.fillRect(x-8,sy+1,Math.round(16*S.search.t/(S.search.dur||1.5)),2)}
   // blit
   ctx.setTransform(1,0,0,1,0,0);ctx.imageSmoothingEnabled=false;
   const vw=LW/ZOOM,vh=LH/ZOOM,cx=Math.round(CAM.x*ZOOM)/ZOOM,cy=Math.round(CAM.y*ZOOM)/ZOOM;
@@ -868,7 +875,7 @@ const HOW=()=>`<ul>
 <li><b>Search</b>: hold <kbd>E</kbd>${isTouch?' or SEARCH':''} for 1.5 s at a locker or footlocker, or at a knocked-out guard to go through his pockets for darts, stones or keys. It makes a little noise. <kbd>E</kbd> also unlocks doors and uses exits.</li>
 <li><b>Fire</b> a tranquilizer dart: ${isTouch?'tap a guard, or ':''}<kbd>Space</kbd>${isTouch?' / FIRE':''}. It locks on to the guard in the red brackets, the nearest one in clear view. <b>Throw</b> a stone to lure guards: <kbd>Q</kbd>${isTouch?' or THROW':''}. Stones go the way you face.</li>
 <li>Stay out of flashlight cones: the bar over a guard fills faster the closer you are. In the greatcoat, guards only notice you close up or running.</li>
-<li>The magnifier button${isTouch?'':' (or <kbd>Z</kbd>)'} switches between a close camera that follows you, medium, and the whole room. Arrows at the edge point to guards out of view. <kbd>P</kbd> pauses, <kbd>M</kbd> mutes. Get caught three times and it's over.</li></ul>`;
+<li>The magnifier button${isTouch?'':' (or <kbd>Z</kbd>)'} switches between the whole room and a close camera that follows you. Arrows at the edge point to guards out of view. <kbd>P</kbd> pauses, <kbd>M</kbd> mutes. Get caught three times and it's over.</li></ul>`;
 const DWORD=d=>d<=2?'Sleepy guards':d<=4?'Lax':d<=6?'Watchful':d<=8?'Sharp-eyed':d===9?'Ruthless':"The commandant's own";
 function bestTxt(){const b=parseFloat(store.get('lednik7_best_'+DIFF));return b>0?`Best escape on level ${DIFF}: <b>${fmt(b)}</b>`:`No escapes on level ${DIFF} yet.`}
 function showTitle(){
@@ -921,11 +928,11 @@ addEventListener('keyup',e=>keys.delete(e.code));
 addEventListener('blur',()=>{keys.clear()});
 $('bPause').addEventListener('click',()=>{initAudio();if(S.mode==='play')pause();else if(S.mode==='pause')startPlay()});
 $('bMute').addEventListener('click',()=>{initAudio();setMute(!muted)});
-const ZNAME={1:'whole room',1.5:'medium',2:'close'};
-function setZoom(z){ZOOM=ZOOMS.includes(z)?z:2;store.set('lednik7_zoom',String(ZOOM));const b=$('bZoom');b.setAttribute('aria-label','Zoom: '+ZNAME[ZOOM]+'. Tap to change.');$('zplus').style.display=ZOOM===2?'none':'';camStep(0,true)}
+const ZNAME={1:'whole room',2:'close camera'};
+function setZoom(z){ZOOM=ZOOMS.includes(z)?z:1;store.set('lednik7_zoom2',String(ZOOM));const b=$('bZoom');b.setAttribute('aria-label','Zoom: '+ZNAME[ZOOM]+'. Tap to change.');$('zplus').style.display=ZOOM===2?'none':'';S.hsig='';camStep(0,true)}
 function cycleZoom(){setZoom(ZOOMS[(ZOOMS.indexOf(ZOOM)+1)%ZOOMS.length]);toast('Zoom: '+ZNAME[ZOOM],1.6)}
 $('bZoom').addEventListener('click',()=>{initAudio();cycleZoom()});
-setZoom(parseFloat(store.get('lednik7_zoom'))||2);
+setZoom(parseFloat(store.get('lednik7_zoom2'))||1);
 const de=document.documentElement,fsOK=!!(document.fullscreenEnabled||document.webkitFullscreenEnabled)&&!!(de.requestFullscreen||de.webkitRequestFullscreen);
 const fsNo=()=>{toast('Full screen is blocked on this page. Try Safari\'s aA menu: Hide Toolbar.',5);$('bFull').hidden=true;store.set('lednik7_nofs','1');layout()};
 if(fsOK&&store.get('lednik7_nofs')!=='1')$('bFull').hidden=false;
@@ -935,7 +942,7 @@ function resetKnob(){S.jx=S.jy=0;tapId=null}
 let tapId=null,lastTap={t:0,x:0,y:0},tapRun=false,lastSet=0;
 function stagePt(e){const r=cv.getBoundingClientRect(),vw=LW/ZOOM,vh=LH/ZOOM;return{x:CAM.x+(e.clientX-r.left)/r.width*vw,y:CAM.y+(e.clientY-r.top)/r.height*vh}}
 $('stage').addEventListener('pointerdown',e=>{if(S.mode!=='play'||FOLDED)return;e.preventDefault();initAudio();const p=stagePt(e),now=performance.now();
-  const hit=P.pistol&&P.darts>0&&!P.hidden?S.guards.find(g=>g.st!=='ko'&&Math.hypot(g.x-p.x,g.y-p.y)<13):null;
+  const hit=P.pistol&&P.darts>0&&!P.hidden?S.guards.find(g=>g.st!=='ko'&&Math.hypot(g.x-p.x,g.y+5-8*CSZ()-p.y)<8*CSZ()+5):null;
   if(hit){S.shootAt=hit;S.fireP=true;lastTap={t:0,x:0,y:0};return}
   tapRun=now-lastTap.t<350&&Math.hypot(p.x-lastTap.x,p.y-lastTap.y)<24;lastTap={t:now,x:p.x,y:p.y};tapId=e.pointerId;try{$('stage').setPointerCapture(tapId)}catch(_){}setTarget(p.x,p.y,tapRun);lastSet=now});
 $('stage').addEventListener('pointermove',e=>{if(e.pointerId!==tapId||S.mode!=='play')return;const now=performance.now();if(now-lastSet<120)return;lastSet=now;const p=stagePt(e);setTarget(p.x,p.y,tapRun)});
