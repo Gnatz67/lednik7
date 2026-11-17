@@ -270,7 +270,9 @@ function genWorld(seed){
   for(const rm of rooms)for(const d of rm.gdefs){const r=R();d.loot=r<.45?'darts':r<.68?'stones':r<.82?'key:'+pick(['red','blue']):r<.9&&rm.id!==start?'key:green':null;d.flav=pick(['A pack of cheap cigarettes.','A letter from home. Nothing useful.','Sunflower seeds.','A pocket comb and some kopecks.']);d.looted=false}
   const topIds=floorIds(top).filter(c=>c!==roots[top]),eliteRooms=[office,roof,...shuf(topIds.filter(c=>c!==office&&c!==roof))].filter((c,i,a)=>a.indexOf(c)===i&&c!==roots[top]).slice(0,2);
   const elites=[];for(const c of eliteRooms){const d=mkRoute(rooms[c],R,ri,pick,false);if(d){d.elite=true;d.loot=null;d.flav='';d.looted=true;elites.push({room:c,def:d})}}
-  return {seed,rooms,edges,adj,fl,start,office,roof,keyRoom,elites};
+  const midIds=floorIds(1).filter(c=>c!==roots[1]&&rooms[c].type!=='yard');let midElite=null;
+  for(const c of shuf(midIds)){const d=mkRoute(rooms[c],R,ri,pick,false);if(d){d.elite=true;d.loot=null;d.flav='';d.looted=true;midElite={room:c,def:d};break}}
+  return {seed,rooms,edges,adj,fl,start,office,roof,keyRoom,elites,midElite};
 }
 
 function buildRoom(rm,R,opt){
@@ -452,7 +454,7 @@ function mkGuard(d){const [x,y]=d.loop[0];return{elite:!!d.elite,def:d,loop:d.lo
 function newRun(seed,mode){
   const w=genWorld(seed);S.w=w;S.seed=seed;
   for(const r of w.rooms){const [a,b]=RT[r.type].g;const n=r.id===w.start?1:Math.round(a+(b-a)*K.t);r.adefs=r.gdefs.slice(0,n);r.guards=r.adefs.map(mkGuard);r.visited=false;r.static=null}
-  const ne=DIFF>=7?2:1;w.elites.slice(0,ne).forEach(({room,def})=>{const r=w.rooms[room];r.adefs.push(def);r.guards.push(mkGuard(def))});
+  const ne=DIFF>=7?2:1;[...w.elites.slice(0,ne),...(w.midElite?[w.midElite]:[])].forEach(({room,def})=>{const r=w.rooms[room];r.adefs.push(def);r.guards.push(mkGuard(def))});
   P={route:null,hidden:null,x:2*TS+8,y:2*TS+8,fx:0,fy:1,dir:0,anim:0,moving:false,running:false,keys:[],stones:0,darts:0,pistol:false,coat:false,film:false,noiseT:0};
   S.time=0;S.lives=3;S.proj=[];S.rings=[];S.drops=[];S.search=null;S.hsig='';
   enterRoom(w.start,{x:P.x,y:P.y},{x:P.x,y:P.y});
@@ -903,7 +905,7 @@ const HOW=()=>`<ul>
 <li><b>Hide</b> in lockers and crates or under tables, desks and beds: <kbd>H</kbd>${isTouch?' or HIDE':''}. Guards can't see you there, but one who walks right up to your spot will find you.</li>
 <li><b>Search</b>: hold <kbd>E</kbd>${isTouch?' or SEARCH':''} for 1.5 s at a locker or footlocker, or at a knocked-out guard to go through his pockets for darts, stones or keys. It makes a little noise. <kbd>E</kbd> also unlocks doors and uses exits.</li>
 <li><b>Fire</b> a tranquilizer dart: ${isTouch?'tap a guard, or ':''}<kbd>Space</kbd>${isTouch?' / FIRE':''}. It locks on to the guard in the red brackets, the nearest one in clear view. <b>Throw</b> a stone to lure guards: <kbd>Q</kbd>${isTouch?' or THROW':''}. Stones go the way you face.</li>
-<li>Officers in red guard the upper floor: darts don't work on them, so sneak past or hide. Stay out of flashlight cones: the bar over a guard fills faster the closer you are. In the greatcoat, guards only notice you close up or running.</li>
+<li>Officers in red (one on the ground floor, more upstairs): darts don't work on them, so sneak past or hide. Stay out of flashlight cones: the bar over a guard fills faster the closer you are. In the greatcoat, guards only notice you close up or running.</li>
 <li>The magnifier button${isTouch?'':' (or <kbd>Z</kbd>)'} switches between the whole room and a close camera that follows you. Arrows at the edge point to guards out of view. <kbd>P</kbd> pauses, <kbd>M</kbd> mutes. Get caught three times and it's over.</li></ul>`;
 const DWORD=d=>d<=2?'Sleepy guards':d<=4?'Lax':d<=6?'Watchful':d<=8?'Sharp-eyed':d===9?'Ruthless':"The commandant's own";
 function bestTxt(){const b=parseFloat(store.get('lednik7_best_'+DIFF));return b>0?`Best escape on level ${DIFF}: <b>${fmt(b)}</b>`:`No escapes on level ${DIFF} yet.`}
