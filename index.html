@@ -239,7 +239,7 @@ function genWorld(seed){
   (rooms[office].cont.find(k=>k.kind==='safe')||rooms[office].cont[0]).item='film';
   for(const col in keyRoom)putItem(keyRoom[col],'key:'+col);
   const r0=[...reach(new Set())].filter(c=>c!==start);
-  putItem(r0.length?pick(r0):start,'pistol');
+  putItem(start,'pistol');
   const coatR=rooms.filter(r=>(r.type==='barracks'||r.type==='laundry')&&r.id!==office).map(r=>r.id);
   putItem(coatR.length?pick(coatR):pick(r0),'coat');
   putItem(start,'stones');
@@ -247,6 +247,7 @@ function genWorld(seed){
   for(const rm of rooms)for(const k of rm.cont)k.flav=pick(FLAV);
   /* guards */
   for(const rm of rooms){const [a,b]=RT[rm.type].g;let n=a+ri(b-a+1);if(rm.id===start)n=1;rm.gdefs=[];for(let i=0;i<n;i++){const d=mkRoute(rm,R,ri,pick,rm.id===start);if(d)rm.gdefs.push(d)}}
+  for(const rm of rooms)for(const d of rm.gdefs){const r=R();d.loot=r<.45?'darts':r<.68?'stones':r<.82?'key:'+pick(['red','blue']):r<.9&&rm.id!==start?'key:green':null;d.flav=pick(['A pack of cheap cigarettes.','A letter from home. Nothing useful.','Sunflower seeds.','A pocket comb and some kopecks.']);d.looted=false}
   return {seed,rooms,edges,start,office,boat,boiler,keyRoom};
 }
 
@@ -315,7 +316,7 @@ function tryBuild(rm,R,opt,plain){
     if(ty==='store'){for(const y of [3,9])for(const [a,b] of [[2,7],[12,17]])for(let x=a;x<=b;x++)if(R()<.85)set(x,y,T.TALL,'shelf');addAnyC('crate',2);addWallC('locker',1)}
     if(ty==='hall'){for(const [x,y] of [[5,4],[14,4],[5,9],[14,9]])set(x,y,T.PIL,'pillar');if(R()<.6)for(let x=7;x<=8;x++)set(x,12,T.LOW,'bench');addWallC('locker',2);addWallC('foot',1);cover(3)}
   }
-  const minC=ty==='office'?3:2;
+  const minC=ty==='office'||opt.start?3:2;
   if(cont.length<minC){addWallC('locker',minC-cont.length);if(cont.length<minC)addWallC('foot',minC-cont.length)}
   if(cont.length<minC)return false;
   /* validate connectivity */
@@ -417,7 +418,7 @@ let P=null;
 const keys=new Set();
 let isTouch=false;try{isTouch=matchMedia('(pointer: coarse)').matches}catch(e){}
 const KT=(k,t)=>isTouch?t:k;
-function mkGuard(d){const [x,y]=d.loop[0];return{loop:d.loop,pz:d.pz,i:d.loop.length>1?1:0,x:x*TS+8,y:y*TS+8,a:Math.random()*6.28,wa:0,base:0,st:'pat',meter:0,path:[],wait:.5,t:Math.random()*5,look:0,rt:0,rp:0,lost:0,stuck:0,kt:0,lsx:0,lsy:0,moving:false,poly:null,seen:false}}
+function mkGuard(d){const [x,y]=d.loop[0];return{def:d,loop:d.loop,pz:d.pz,i:d.loop.length>1?1:0,x:x*TS+8,y:y*TS+8,a:Math.random()*6.28,wa:0,base:0,st:'pat',meter:0,path:[],wait:.5,t:Math.random()*5,look:0,rt:0,rp:0,lost:0,stuck:0,kt:0,lsx:0,lsy:0,moving:false,poly:null,seen:false}}
 function newRun(seed,mode){
   const w=genWorld(seed);S.w=w;S.seed=seed;
   for(const r of w.rooms){r.guards=r.gdefs.map(mkGuard);r.visited=false;r.static=null}
@@ -519,16 +520,23 @@ function tileDist(tx,ty){const X=tx*TS,Y=ty*TS;const dx=Math.max(X-P.x,0,P.x-(X+
 function findTarget(){
   const rm=S.room;let best=null,bd=1e9;
   for(const k of rm.cont){const d=tileDist(k.x,k.y);if(d<9&&d<bd){bd=d;best={type:'cont',k}}}
+  for(const g of S.guards)if(g.st==='ko'){const d=Math.max(0,Math.hypot(g.x-P.x,g.y-P.y)-6);if(d<9&&d<bd){bd=d;best={type:'body',g}}}
   for(const s in rm.edges){const e=rm.edges[s];if(!e||!e.lock)continue;const tl=s==='t'?[[9,0],[10,0]]:s==='b'?[[9,13],[10,13]]:s==='l'?[[0,6],[0,7]]:[[19,6],[19,7]];for(const [x,y] of tl){const d=tileDist(x,y);if(d<9&&d<bd){bd=d;best={type:'door',e}}}}
   for(const ex of rm.exits){const d=tileDist(ex.x,ex.y);if(d<9&&d<bd){bd=d;best={type:'exit',ex}}}
   return best;
 }
+function searchBody(g){const d=g.def;d.looted=true;const it=d.loot;
+  if(!it){toast(d.flav);sfx('empty');return}
+  if(it==='darts'){P.darts+=2;toast('Two tranquilizer darts from his belt.')}
+  else if(it==='stones'){P.stones+=2;toast('Two stones from his pockets. Odd, but useful.')}
+  else{const c=it.slice(4);if(P.keys.includes(c)){P.darts+=1;toast(`A spare ${c} key you already have, and one dart.`)}else{P.keys.push(c);toast(`He had the ${c} key on his belt!`)}}
+  sfx('item');S.hsig=''}
 function openCont(k){
   k.searched=true;const it=k.item;k.item=null;
   if(!it){toast(k.flav||'Nothing.');sfx('empty');return}
   if(it.startsWith('key:')){const c=it.slice(4);P.keys.push(c);toast(`${KEYN[c]} key! It opens ${c}-marked doors.`)}
   else if(it==='stones'){P.stones+=2;toast(`Two loose stones. ${KT('Q','THROW')} tosses one to lure a guard.`)}
-  else if(it==='pistol'){P.pistol=true;P.darts+=5;toast(`Tranquilizer pistol, 5 darts. ${KT('Space','FIRE')} to shoot.`)}
+  else if(it==='pistol'){P.pistol=true;P.darts+=5;toast(`Tranquilizer pistol, 5 darts. Search sleeping guards for more. ${KT('Space','FIRE')} to shoot.`)}
   else if(it==='coat'){P.coat=true;toast("A guard's greatcoat. You put it on. Don't run, don't get close.",4.5)}
   else if(it==='film'){P.film=true;toast('The microfilm! Now get out: the boiler-room tunnel or the boathouse.',5)}
   sfx('item');
@@ -536,18 +544,21 @@ function openCont(k){
 function interact(dt,moving){
   const tg=findTarget();S.target=tg;
   const held=keys.has('KeyE')||S.touchAct;
-  if(tg&&tg.type==='cont'&&!tg.k.searched){
-    if(held&&!moving){if(!S.search||S.search.k!==tg.k){S.search={k:tg.k,t:0,n:0};noise(P.x,P.y,40);sfx('rummage')}S.search.t+=dt;if(S.search.t>.75&&S.search.n===0){S.search.n=1;noise(P.x,P.y,40);sfx('rummage')}if(S.search.t>=1.5){openCont(tg.k);S.search=null}}
+  const sObj=tg&&(tg.type==='cont'&&!tg.k.searched?tg.k:tg.type==='body'&&!tg.g.def.looted?tg.g:null);
+  if(sObj){const body=tg.type==='body',dur=body?1.2:1.5,nr=body?28:40;
+    if(held&&!moving){if(!S.search||S.search.k!==sObj){S.search={k:sObj,t:0,n:0,dur};noise(P.x,P.y,nr);sfx('rummage')}S.search.t+=dt;if(S.search.t>dur/2&&S.search.n===0){S.search.n=1;noise(P.x,P.y,nr);sfx('rummage')}if(S.search.t>=dur){body?searchBody(sObj):openCont(sObj);S.search=null}}
     else S.search=null;
   }else S.search=null;
   if(S.actP&&tg){
     if(tg.type==='cont'&&tg.k.searched)toast('Already searched. Empty.');
+    if(tg.type==='body'&&tg.g.def.looted)toast('You already went through his pockets.');
     if(tg.type==='door'){const c=tg.e.lock;if(P.keys.includes(c)){tg.e.was=c;tg.e.lock=null;sfx('unlock');toast(`Unlocked with the ${c} key.`);S.hsig=''}else{sfx('locked');toast(`Locked. It needs the ${c} key.`)}}
     if(tg.type==='exit'){if(P.film)win(tg.ex.kind);else{sfx('locked');toast("You won't leave without the microfilm.")}}
   }
   let pr='';
   if(tg){const E=KT('E','SEARCH');
-    if(tg.type==='cont')pr=tg.k.searched?`${cap(CNAME[tg.k.kind])}: empty`:`Hold ${E}: search ${CNAME[tg.k.kind]}`;
+    if(tg.type==='body')pr=tg.g.def.looted?'Searched guard':`Hold ${E}: search the guard`;
+    else if(tg.type==='cont')pr=tg.k.searched?`${cap(CNAME[tg.k.kind])}: empty`:`Hold ${E}: search ${CNAME[tg.k.kind]}`;
     else if(tg.type==='door')pr=P.keys.includes(tg.e.lock)?`${KT('E','OPEN')}: unlock ${tg.e.lock} door`:`Locked: ${tg.e.lock} key needed`;
     else pr=`${KT('E','OPEN')}: ${tg.ex.kind==='boat'?'take the boat':'drop into the tunnel'}`}
   const hs=findHide();if(hs)pr=pr?pr+` · ${KT('H','HIDE')}: hide`:`${KT('H','HIDE')}: hide ${hs.label}`;
@@ -763,7 +774,7 @@ function draw(){
     if(e.p){const x=Math.round(P.x),y=Math.round(P.y);f.fillStyle='rgba(0,0,0,.4)';f.fillRect(x-5,y+4,10,3);const fr=P.moving?(Math.floor(P.anim)%2):0;f.drawImage(SPR[P.coat?'coat':'pris'][fr][P.dir],x-6,y-6);
       if((P.pistol&&P.darts>0)||P.stones>0){f.fillStyle='rgba(207,228,255,.8)';f.fillRect(Math.round(P.x+P.fx*13),Math.round(P.y+P.fy*13),1,1);f.fillRect(Math.round(P.x+P.fx*17),Math.round(P.y+P.fy*17),1,1)}}
     else{const g=e.g,x=Math.round(g.x),y=Math.round(g.y);
-      if(g.st==='ko'){f.globalAlpha=.85;f.drawImage(SPR.guard[0][1],x-6,y-6);f.globalAlpha=1;const zt=RM?0:Math.floor(g.t*2)%3;drawTxt(f,'Z',x+3,y-12-zt,'#cfe4ff');continue}
+      if(g.st==='ko'){f.globalAlpha=.85;f.drawImage(SPR.guard[0][1],x-6,y-6);f.globalAlpha=1;const zt=RM?0:Math.floor(g.t*2)%3;drawTxt(f,'Z',x+3,y-12-zt,'#cfe4ff');if(!g.def.looted&&(RM||(performance.now()/500)%2<1.3)){f.fillStyle='#ffe39a';f.fillRect(x-1,y+5,2,2)}continue}
       f.fillStyle='rgba(0,0,0,.4)';f.fillRect(x-5,y+4,10,3);const fr=g.moving?(Math.floor(g.t*6)%2):0;f.drawImage(SPR.guard[fr][dir4(g.a)],x-6,y-6)}
   }
   for(const p of S.proj){f.fillStyle=p.k==='dart'?'#ffe39a':'#9aa3b0';f.fillRect(Math.round(p.x)-1,Math.round(p.y)-1,p.k==='dart'?2:3,p.k==='dart'?2:3)}
@@ -774,7 +785,7 @@ function draw(){
     if(g.st==='chase')drawTxt(f,'!',x,y-15,'#ff5a4a');else if(g.st==='inv')drawTxt(f,'?',x-1,y-15,'#ffd27a');
     if(g.meter>0.02&&g.st!=='chase'){f.fillStyle='#0a0f1a';f.fillRect(x-7,y-9,14,3);f.fillStyle=g.meter>.6?'#ff7a4a':'#ffd27a';f.fillRect(x-6,y-8,Math.round(12*g.meter),1)}}
   if(P.route&&P.route.mark){const m=P.route.mark,x=Math.round(clamp(m.x,4,LW-4)),y=Math.round(clamp(m.y,4,LH-4)),c=P.route.run?'#ff9a5a':'#9cc4ec';f.fillStyle=c;f.fillRect(x-3,y,2,1);f.fillRect(x+2,y,2,1);f.fillRect(x,y-3,1,2);f.fillRect(x,y+2,1,2)}
-  if(S.search){const x=Math.round(P.x),y=Math.round(P.y);f.fillStyle='#0a0f1a';f.fillRect(x-9,y-12,18,4);f.fillStyle='#9cc4ec';f.fillRect(x-8,y-11,Math.round(16*S.search.t/1.5),2)}
+  if(S.search){const x=Math.round(P.x),y=Math.round(P.y);f.fillStyle='#0a0f1a';f.fillRect(x-9,y-12,18,4);f.fillStyle='#9cc4ec';f.fillRect(x-8,y-11,Math.round(16*S.search.t/(S.search.dur||1.5)),2)}
   // blit
   ctx.setTransform(1,0,0,1,0,0);ctx.imageSmoothingEnabled=false;ctx.drawImage(frame,0,0,cv.width,cv.height);
 }
@@ -819,7 +830,7 @@ function hideOv(){ov.hidden=true;ov.innerHTML='';try{cv.focus&&document.activeEl
 const HOW=()=>`<ul>
 <li><b>Move</b>: tap or click where you want to go${isTouch?'':', or use <kbd>WASD</kbd>/<kbd>arrows</kbd>'}. Walking is silent. <b>Run</b> with a double-tap${isTouch?'':' or <kbd>Shift</kbd>'}: fast, but guards hear it.</li>
 <li><b>Hide</b> in lockers and crates or under tables, desks and beds: <kbd>H</kbd>${isTouch?' or HIDE':''}. Guards can't see you there, but one who walks right up to your spot will find you.</li>
-<li><b>Search</b>: hold <kbd>E</kbd>${isTouch?' or SEARCH':''} for 1.5 s at a locker or footlocker. It makes a little noise. <kbd>E</kbd> also unlocks doors and uses exits.</li>
+<li><b>Search</b>: hold <kbd>E</kbd>${isTouch?' or SEARCH':''} for 1.5 s at a locker or footlocker, or at a knocked-out guard to go through his pockets for darts, stones or keys. It makes a little noise. <kbd>E</kbd> also unlocks doors and uses exits.</li>
 <li><b>Fire</b> a tranquilizer dart: <kbd>Space</kbd>${isTouch?' or FIRE':''}. <b>Throw</b> a stone to lure guards: <kbd>Q</kbd>${isTouch?' or THROW':''}. Both go the way you face.</li>
 <li>Stay out of flashlight cones: the bar over a guard fills faster the closer you are. In the greatcoat, guards only notice you close up or running.</li>
 <li><kbd>P</kbd> pauses, <kbd>M</kbd> mutes. Get caught three times and it's over.</li></ul>`;
