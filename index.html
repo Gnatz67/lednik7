@@ -924,7 +924,7 @@ const ov=$('ov');
 function showOv(html){ov.innerHTML=`<div class="panel">${html}</div>`;ov.hidden=false;setPrompt('');const b=ov.querySelector('.primary')||ov.querySelector('button');if(b)setTimeout(()=>{try{b.focus({preventScroll:true})}catch(e){}},30)}
 function hideOv(){ov.hidden=true;ov.innerHTML='';try{cv.focus&&document.activeElement&&document.activeElement.blur()}catch(e){}}
 const HOW=()=>`<ul>
-<li><b>Move</b>: ${isTouch&&CTRL==='sticks'?'touch anywhere on the left half of the screen and slide your thumb; slide further to <b>run</b> (fast, but guards hear it).':isTouch?'tap where you want to go; double-tap to <b>run</b> (fast, but guards hear it).':'click where you want to go, or <kbd>WASD</kbd>/<kbd>arrows</kbd>. Hold <kbd>Shift</kbd> to <b>run</b> (fast, but guards hear it).'} Walking is silent.</li>
+<li><b>Move</b>: ${isTouch&&CTRL==='sticks'?'touch anywhere on the left half of the screen and slide your thumb; slide well past that, about three times as far, to <b>run</b> (fast, but guards hear it).':isTouch?'tap where you want to go; double-tap to <b>run</b> (fast, but guards hear it).':'click where you want to go, or <kbd>WASD</kbd>/<kbd>arrows</kbd>. Hold <kbd>Shift</kbd> to <b>run</b> (fast, but guards hear it).'} Walking is silent.</li>
 <li><b>Hide</b> in lockers and crates or under tables, desks and beds: <kbd>H</kbd>${isTouch?' or HIDE':''}. Guards can't see you there, but one who walks right up to your spot will find you.</li>
 <li><b>Search</b>: hold <kbd>E</kbd>${isTouch?' or SEARCH':''} for 1.5 s at a locker or footlocker, or at a knocked-out guard to go through his pockets for darts, stones or keys. It makes a little noise. <kbd>E</kbd> also unlocks doors and uses exits.</li>
 <li><b>Fire</b> a tranquilizer dart: ${isTouch&&CTRL==='sticks'?'on the right half, slide your thumb the way you want to shoot and let go: the dart flies straight along the dotted line. A quick tap shoots the way you are facing.':isTouch?'tap a guard.':'<kbd>Space</kbd> shoots the guard in the red brackets, the nearest one in clear view.'} <b>Gas bomb</b> (${isTouch?'GAS':'<kbd>G</kbd>'}): puts everyone near where it lands to sleep, red officers too. <b>Throw</b> a stone to lure guards: <kbd>Q</kbd>${isTouch?' or THROW':''}. Stones go the way you face.</li>
@@ -1030,9 +1030,9 @@ function stickZone(e){if(S.mode!=='play'||FOLDED||e.pointerType==='mouse'||CTRL!
 document.addEventListener('pointerdown',e=>{if(!stickZone(e))return;e.preventDefault();initAudio();const left=e.clientX<innerWidth/2;
   if(left&&!stk.mv){stk.mv={id:e.pointerId,x:e.clientX,y:e.clientY};if(P.hidden)unhide()}
   else if(!left&&!stk.aim){stk.aim={id:e.pointerId,x:e.clientX,y:e.clientY,t:performance.now(),dx:0,dy:0}}},{passive:false});
-document.addEventListener('pointermove',e=>{const R0=Math.min(60,innerWidth*.07);
-  if(stk.mv&&e.pointerId===stk.mv.id){let dx=(e.clientX-stk.mv.x)/R0,dy=(e.clientY-stk.mv.y)/R0;const m=Math.hypot(dx,dy);S.jrun=m>1.6;if(m>1){dx/=m;dy/=m}S.jx=m<.2?0:dx;S.jy=m<.2?0:dy;
-    if(m>2.2){stk.mv.x=e.clientX-dx*R0*2.2;stk.mv.y=e.clientY-dy*R0*2.2}}
+document.addEventListener('pointermove',e=>{const R0=Math.min(50,innerWidth*.06);
+  if(stk.mv&&e.pointerId===stk.mv.id){let dx=(e.clientX-stk.mv.x)/R0,dy=(e.clientY-stk.mv.y)/R0;const m=Math.hypot(dx,dy);S.jrun=m>2.9;if(m>1){dx/=m;dy/=m}S.jx=m<.2?0:dx;S.jy=m<.2?0:dy;
+    if(m>3.4){stk.mv.x=e.clientX-dx*R0*3.4;stk.mv.y=e.clientY-dy*R0*3.4}}
   if(stk.aim&&e.pointerId===stk.aim.id){const dx=e.clientX-stk.aim.x,dy=e.clientY-stk.aim.y,m=Math.hypot(dx,dy);stk.aim.dx=dx;stk.aim.dy=dy;if(m>18){S.aimV={x:dx/m,y:dy/m};P.ax=dx/m;P.ay=dy/m}else S.aimV=null}});
 function stickEnd(e){if(stk.mv&&e.pointerId===stk.mv.id){stk.mv=null;S.jx=S.jy=0;S.jrun=false}
   if(stk.aim&&e.pointerId===stk.aim.id){const a=stk.aim,m=Math.hypot(a.dx,a.dy);stk.aim=null;
