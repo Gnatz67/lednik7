@@ -62,7 +62,7 @@ button{font:inherit;touch-action:manipulation}
 #pad{position:absolute;right:14px;bottom:14px;display:grid;grid-template-columns:repeat(2,var(--b,70px));gap:10px;pointer-events:auto}
 .tb{width:var(--b,70px);height:var(--b,70px);border-radius:50%;border:2px solid;font:700 clamp(10px,calc(var(--b,70px)/5.6),13px)/1.1 system-ui,sans-serif;letter-spacing:.02em;color:var(--ink);touch-action:none;padding:0}
 #tSearch{background:rgba(70,110,160,.55);border-color:var(--frost)}
-#tFire{background:rgba(140,50,45,.55);border-color:#e46a5e}
+#tFire{background:rgba(70,110,70,.55);border-color:#9fdc8a}
 #tThrow{background:rgba(130,100,40,.5);border-color:var(--amber)}
 #tHide{background:rgba(40,70,60,.6);border-color:#7fb79a}
 #tHide[aria-pressed=true]{background:rgba(127,183,154,.85);color:#06140d;border-color:#d8f5e4}
@@ -77,6 +77,7 @@ button{font:inherit;touch-action:manipulation}
 .panel ul{margin:10px 0;padding-left:18px;color:#c9d5e6;font-size:15px}
 .panel li{margin:3px 0}
 .panel kbd{font:600 12px ui-monospace,Menlo,monospace;background:#1b2a46;border:1px solid #33496f;border-radius:4px;padding:0 5px;white-space:nowrap}
+#heli{display:block;width:100%;aspect-ratio:16/9;image-rendering:pixelated;border-radius:8px;margin-bottom:12px;background:#060b1c}
 #logo{display:block;image-rendering:pixelated;margin:0 0 10px;max-width:100%}
 .diffrow{margin:14px 0}.diffrow label{display:flex;gap:8px;align-items:baseline}#diffOut{color:var(--amber);font-size:22px;font-variant-numeric:tabular-nums}#diffWord{color:var(--dim)}
 .diffrow input{width:100%;height:44px;accent-color:var(--amber);margin:4px 0 0}.ends{display:flex;justify-content:space-between;color:var(--dim);font-size:13px}
@@ -122,7 +123,7 @@ button{font:inherit;touch-action:manipulation}
     <div id="pad">
       <button class="tb" id="tSearch" aria-label="Search or open, hold to search">SEARCH<br>OPEN</button>
       <button class="tb" id="tHide" aria-label="Hide, or come out of hiding" aria-pressed="false">HIDE</button>
-      <button class="tb" id="tFire" aria-label="Fire tranquilizer dart">FIRE</button>
+      <button class="tb" id="tFire" aria-label="Throw a sleep-gas bomb">GAS</button>
       <button class="tb" id="tThrow" aria-label="Throw a stone">THROW</button>
       
     </div>
@@ -263,6 +264,7 @@ function genWorld(seed){
   const coatR=rooms.filter(r=>(r.type==='barracks'||r.type==='laundry')&&r.id!==office).map(r=>r.id);
   putItem(coatR.length?pick(coatR):pick(r0),'coat');
   putItem(start,'stones');
+  {const inf=rooms.filter(r=>r.type==='infirmary');for(const r of inf){const mc=r.cont.filter(k=>k.kind==='medcab'&&!k.item);if(mc.length)mc[0].item='gas';else putItem(r.id,'gas')}if(!inf.length)putItem(pick(rooms.filter(r=>r.lv===1)).id,'gas');putItem(pick(rooms.filter(r=>r.lv>=1&&r.id!==office)).id,'gas')}
   for(let i=0;i<5;i++)putItem(pick(rooms.filter(r=>r.id!==office)).id,'stones');
   for(const rm of rooms)for(const k of rm.cont)k.flav=pick(FLAV);
   /* guards */
@@ -448,13 +450,15 @@ const SFX={
   wake(){tone(260,.18,'triangle',.07,520)},
   win(){[523,659,784,1046,1318].forEach((f,i)=>tone(f,.28,'square',.06,0,i*.13))},
   step(){noiseB(.03,.04,900)},
+  gas(){noiseB(1.2,.18,900);noiseB(.8,.1,2400,.1)},
+  heli(){if(!AC||muted)return;for(let i=0;i<14;i++)noiseB(.07,.22,160,i*.11)},
   stairs(){for(let i=0;i<5;i++)noiseB(.05,.08,700+i*120,i*.09)}
 };
 const sfx=n=>{try{SFX[n]&&SFX[n]()}catch(e){}};
 function setMute(m){muted=m;store.set('lednik7_mute',m?'1':'0');if(master)master.gain.value=m?0:.55;const b=$('bMute');b.setAttribute('aria-pressed',String(m));b.setAttribute('aria-label',m?'Unmute sound':'Mute sound');$('mwave').style.display=m?'none':'';$('mx').style.display=m?'':'none';const ob=document.querySelector('[data-act=mute]');if(ob)ob.textContent=m?'Sound: off':'Sound: on'}
 
 /* ================= game state ================= */
-const S={mode:'title',w:null,room:null,guards:[],proj:[],rings:[],drops:[],time:0,lives:3,msgT:0,search:null,target:null,actP:false,fireP:false,throwP:false,touchAct:false,hideP:false,shootAt:null,jx:0,jy:0,beepT:0,snow:[],hsig:'',lastT:''};
+const S={clouds:[],gasP:false,fireDir:null,jrun:false,mode:'title',w:null,room:null,guards:[],proj:[],rings:[],drops:[],time:0,lives:3,msgT:0,search:null,target:null,actP:false,fireP:false,throwP:false,touchAct:false,hideP:false,shootAt:null,jx:0,jy:0,beepT:0,snow:[],hsig:'',lastT:''};
 let P=null;
 const keys=new Set();
 let isTouch=false;try{isTouch=matchMedia('(pointer: coarse)').matches}catch(e){}
@@ -464,15 +468,15 @@ function newRun(seed,mode){
   const w=genWorld(seed);S.w=w;S.seed=seed;
   for(const r of w.rooms){const [a,b]=RT[r.type].g;const n=r.id===w.start?1:Math.round(a+(b-a)*K.t);r.adefs=r.gdefs.slice(0,n);r.guards=r.adefs.map(mkGuard);r.visited=false;r.static=null}
   const ne=DIFF>=7?2:1;[...w.elites.slice(0,ne),...(w.midElite?[w.midElite]:[])].forEach(({room,def})=>{const r=w.rooms[room];r.adefs.push(def);r.guards.push(mkGuard(def))});
-  P={route:null,hidden:null,x:2*TS+8,y:2*TS+8,fx:0,fy:1,dir:0,anim:0,moving:false,running:false,keys:[],stones:0,darts:0,pistol:false,coat:false,film:false,noiseT:0};
-  S.time=0;S.lives=3;S.proj=[];S.rings=[];S.drops=[];S.search=null;S.hsig='';
+  P={gas:0,ax:0,ay:1,route:null,hidden:null,x:2*TS+8,y:2*TS+8,fx:0,fy:1,dir:0,anim:0,moving:false,running:false,keys:[],stones:0,darts:0,pistol:false,coat:false,film:false,noiseT:0};
+  S.time=0;S.lives=3;S.clouds=[];S.proj=[];S.rings=[];S.drops=[];S.search=null;S.hsig='';
   enterRoom(w.start,{x:P.x,y:P.y},{x:P.x,y:P.y});
   S.mode=mode||'play';
   makeSnow();
 }
 function enterRoom(id,pos,entry){
   const rm=S.w.rooms[id];S.room=rm;S.guards=rm.guards;rm.visited=true;
-  P.x=pos.x;P.y=pos.y;P.route=null;P.hidden=null;S.entry=entry;S.proj=[];S.rings=[];S.drops=[];S.search=null;
+  P.x=pos.x;P.y=pos.y;P.route=null;S.clouds=[];P.hidden=null;S.entry=entry;S.proj=[];S.rings=[];S.drops=[];S.search=null;
   if(!rm.static)rm.static=renderStatic(rm);
   camStep(0,true);
   S.hsig='';
@@ -590,6 +594,7 @@ function openCont(k){
   k.searched=true;const it=k.item;k.item=null;
   if(!it){toast(k.flav||'Nothing.');sfx('empty');return}
   if(it.startsWith('key:')){const c=it.slice(4);P.keys.push(c);toast(`${KEYN[c]} key! It opens ${c}-marked doors.`)}
+  else if(it==='gas'){P.gas++;toast(`A sleep-gas bomb! ${KT('G','GAS')} throws it: everyone near where it lands falls asleep, even the officers in red.`,5)}
   else if(it==='stones'){P.stones+=2;toast(`Two loose stones. ${KT('Q','THROW')} tosses one to lure a guard.`)}
   else if(it==='pistol'){P.pistol=true;P.darts+=5;toast(`Tranquilizer pistol, 5 darts. Search sleeping guards for more. ${KT('Space','FIRE')} to shoot.`)}
   else if(it==='coat'){P.coat=true;toast("A guard's greatcoat. You put it on. Don't run, don't get close.",4.5)}
@@ -665,6 +670,7 @@ function updPlayer(dt){
   let mx=0,my=0;
   if(keys.has('KeyA')||keys.has('ArrowLeft'))mx--;if(keys.has('KeyD')||keys.has('ArrowRight'))mx++;
   if(keys.has('KeyW')||keys.has('ArrowUp'))my--;if(keys.has('KeyS')||keys.has('ArrowDown'))my++;
+  mx+=S.jx;my+=S.jy;
   if(S.hideP){S.hideP=false;toggleHide()}
   if(P.hidden){if(mx||my)unhide();else{P.moving=false;P.running=false;setPrompt(`Hidden ${P.hidden.label}. ${KT('H','HIDE')} or move to come out`);S.actP=S.fireP=S.throwP=false;return}}
   let routeRun=false;
@@ -674,7 +680,7 @@ function updPlayer(dt){
     if(!r.pts.length){if(r.face){const fa=Math.atan2(r.face.y-P.y,r.face.x-P.x);P.fx=Math.cos(fa);P.fy=Math.sin(fa);P.dir=Math.abs(P.fx)>Math.abs(P.fy)?(P.fx>0?1:3):(P.fy>0?0:2)}P.route=null}}
   let mag=Math.hypot(mx,my);if(mag>1){mx/=mag;my/=mag;mag=1}
   const moving=mag>.18;
-  P.running=moving&&(keys.has('ShiftLeft')||keys.has('ShiftRight')||routeRun);
+  P.running=moving&&(keys.has('ShiftLeft')||keys.has('ShiftRight')||routeRun||S.jrun);
   const ox=P.x,oy=P.y;
   P.moving=moving;
   if(moving){
@@ -694,23 +700,27 @@ function updPlayer(dt){
   if(P.y<2&&rm.edges.t)return leaveRoom('t');if(P.y>LH-2&&rm.edges.b)return leaveRoom('b');
   interact(dt,moving);
   if(S.fireP){if(!P.pistol)toast('You have no weapon.');else if(P.darts<=0)toast('Out of darts. Search knocked-out guards for more.');else{
-    let tg=S.shootAt&&S.shootAt.st!=='ko'?S.shootAt:aimTarget();
+    const direct=S.fireDir||S.fireFace;let tg=S.shootAt&&S.shootAt.st!=='ko'?S.shootAt:direct?null:aimTarget();
+    if(S.fireDir&&!tg){P.fx=S.fireDir.x;P.fy=S.fireDir.y;P.dir=Math.abs(P.fx)>Math.abs(P.fy)?(P.fx>0?1:3):(P.fy>0?0:2)}
     if(S.shootAt&&tg===S.shootAt&&!los(P.x,P.y,tg.x,tg.y)){toast('No clear shot at him from here.');tg=null;S.fireP=false}
     if(S.fireP){if(tg){const a=Math.atan2(tg.y-P.y,tg.x-P.x);P.fx=Math.cos(a);P.fy=Math.sin(a);P.dir=Math.abs(P.fx)>Math.abs(P.fy)?(P.fx>0?1:3):(P.fy>0?0:2)}
       P.darts--;S.proj.push({k:'dart',tg,x:P.x+P.fx*6,y:P.y+P.fy*6,vx:P.fx*300,vy:P.fy*300,d:0,max:260});sfx('dart');noise(P.x,P.y,26)}}}
-  S.shootAt=null;
+  S.shootAt=null;S.fireDir=null;S.fireFace=false;
+  if(S.gasP){if(P.gas<=0)toast('No gas bombs. Medicine cabinets sometimes have them.');else{P.gas--;const tg=aimTarget(true),a=tg?Math.atan2(tg.y-P.y,tg.x-P.x):Math.atan2(P.ay||P.fy,P.ax||P.fx);S.proj.push({k:'gas',x:P.x,y:P.y,vx:Math.cos(a)*170,vy:Math.sin(a)*170,d:0,max:tg?Math.min(130,Math.hypot(tg.x-P.x,tg.y-P.y)):110});sfx('throw')}}
   if(S.throwP){if(P.stones<=0)toast('No stones to throw.');else{P.stones--;S.proj.push({k:'stone',x:P.x,y:P.y,vx:P.fx*170,vy:P.fy*170,d:0,max:112});sfx('throw')}}
 }
 /* auto-aim: nearest guard in clear view within range, favouring the way you face */
-function aimTarget(){let best=null,bs=1e9;for(const g of S.guards){if(g.st==='ko'||g.elite)continue;const dx=g.x-P.x,dy=g.y-P.y,d=Math.hypot(dx,dy);if(d>K.aim||!los(P.x,P.y,g.x,g.y))continue;const da=Math.abs(wrapA(Math.atan2(dy,dx)-Math.atan2(P.fy,P.fx)));const sc=d+da*40;if(sc<bs){bs=sc;best=g}}return best}
+function aimAlong(ax,ay){let best=null,bs=1e9;const a0=Math.atan2(ay,ax);for(const g of S.guards){if(g.st==='ko'||g.elite)continue;const dx=g.x-P.x,dy=g.y-P.y,d=Math.hypot(dx,dy);if(d>K.aim+30||!los(P.x,P.y,g.x,g.y))continue;const da=Math.abs(wrapA(Math.atan2(dy,dx)-a0));if(da>.32)continue;const sc=d+da*120;if(sc<bs){bs=sc;best=g}}return best}
+function aimTarget(any){let best=null,bs=1e9;for(const g of S.guards){if(g.st==='ko'||(g.elite&&!any))continue;const dx=g.x-P.x,dy=g.y-P.y,d=Math.hypot(dx,dy);if(d>K.aim||!los(P.x,P.y,g.x,g.y))continue;const da=Math.abs(wrapA(Math.atan2(dy,dx)-Math.atan2(P.fy,P.fx)));const sc=d+da*40;if(sc<bs){bs=sc;best=g}}return best}
 function updProj(dt){
   for(let i=S.proj.length-1;i>=0;i--){const p=S.proj[i];let dead=false;const steps=Math.ceil(Math.hypot(p.vx,p.vy)*dt/2);
     if(p.tg&&p.tg.st!=='ko'){const a=Math.atan2(p.tg.y-p.y,p.tg.x-p.x);p.vx=Math.cos(a)*300;p.vy=Math.sin(a)*300}
     for(let s=0;s<steps&&!dead;s++){const nx=p.x+p.vx*dt/steps,ny=p.y+p.vy*dt/steps;p.d+=Math.hypot(nx-p.x,ny-p.y);
       if(nx<0||ny<0||nx>=LW||ny>=LH||visBlock(S.room,Math.floor(nx/TS),Math.floor(ny/TS))){dead=true;break}
       p.x=nx;p.y=ny;
-      if(p.k==='dart')for(const g of S.guards)if(g.st!=='ko'&&Math.hypot(g.x-p.x,g.y-p.y)<9){if(g.elite){toast('The dart glances off the red officer. He felt that.');sfx('locked');if(g.st!=='chase'){investigate(g,P.x,P.y);g.meter=Math.max(g.meter,.7)}}else ko(g);dead=true;break}
+      if(p.k==='dart')for(const g of S.guards)if(g.st!=='ko'&&Math.hypot(g.x-p.x,g.y+4-6*CSZ()-p.y)<(p.tg?9:5+5*CSZ())){if(g.elite){toast('The dart glances off the red officer. He felt that.');sfx('locked');if(g.st!=='chase'){investigate(g,P.x,P.y);g.meter=Math.max(g.meter,.7)}}else ko(g);dead=true;break}
       if(p.d>=p.max)dead=true}
+    if(dead&&p.k==='gas'){S.clouds.push({x:p.x,y:p.y,r:50,t:0});sfx('gas');noise(p.x,p.y,60)}
     if(dead){if(p.k==='stone'){S.drops.push({x:p.x,y:p.y});noise(p.x,p.y,112);sfx('land')}S.proj.splice(i,1)}}
 }
 function update(dt){
@@ -718,7 +728,8 @@ function update(dt){
   updPlayer(dt);if(S.mode!=='play')return;
   updProj(dt);
   for(const g of S.guards){updGuard(g,dt);if(S.mode!=='play')break}
-  S.actP=S.fireP=S.throwP=false;
+  S.actP=S.fireP=S.throwP=S.gasP=false;
+  for(let i=S.clouds.length-1;i>=0;i--){const c=S.clouds[i];c.t+=dt;const r=c.r*Math.min(1,c.t/.5);let n=0;for(const g of S.guards)if(g.st!=='ko'&&Math.hypot(g.x-c.x,g.y-c.y)<r){g.st='ko';g.kt=K.ko+6;g.meter=0;g.path=[];g.seen=false;n++}if(n){sfx('ko');toast(n>1?`The gas drops ${n} guards where they stand.`:'The gas drops him where he stands.')}if(c.t>3)S.clouds.splice(i,1)}
   for(let i=S.rings.length-1;i>=0;i--){S.rings[i].t+=dt;if(S.rings[i].t>.6)S.rings.splice(i,1)}
   if(S.guards.some(g=>g.st==='chase')){S.beepT-=dt;if(S.beepT<=0){sfx('beep');S.beepT=.7}}else S.beepT=0;
 }
@@ -850,14 +861,16 @@ function draw(){
       if(g.st==='ko'){f.fillStyle='rgba(0,0,0,.4)';const cs=CSZ();f.fillRect(x-8*cs,y+1,16*cs,4);f.save();f.translate(x+8*cs,y+4-12*cs);f.rotate(Math.PI/2);f.drawImage(SPR.guard[0][2],0,0,12*cs,16*cs);f.restore();const zt=RM?0:Math.floor(g.t*2)%3;drawTxt(f,'Z',x+5*cs,y-6-6*cs-zt,'#cfe4ff');if(!g.def.looted&&(RM||(performance.now()/500)%2<1.3)){f.fillStyle='#ffe39a';f.fillRect(x-1,y+5,2,2)}continue}
       f.fillStyle='rgba(0,0,0,.4)';const cs=CSZ();f.fillRect(x-5*cs,y+4,10*cs,3);const fr=g.moving?(Math.floor(g.t*6)%2):0;f.drawImage(SPR[g.elite?'elite':'guard'][fr][dir4(g.a)],x-6*cs,y+5-16*cs,12*cs,16*cs)}
   }
-  for(const p of S.proj){f.fillStyle=p.k==='dart'?'#ffe39a':'#9aa3b0';f.fillRect(Math.round(p.x)-1,Math.round(p.y)-1,p.k==='dart'?2:3,p.k==='dart'?2:3)}
+  for(const c of S.clouds){const r=c.r*Math.min(1,c.t/.5),al=Math.max(0,.5*(1-Math.max(0,c.t-2)));for(let k=0;k<7;k++){const a=k*0.9+(RM?0:c.t*.6),rr=r*(.45+.25*Math.sin(k*1.7));f.fillStyle=`rgba(190,235,170,${al*.5})`;f.beginPath();f.arc(c.x+Math.cos(a)*r*.45,c.y+Math.sin(a)*r*.35,rr*.6,0,6.283);f.fill()}}
+  if(S.aimV){const a=Math.atan2(S.aimV.y,S.aimV.x);f.fillStyle='rgba(255,120,100,.9)';for(let d=10;d<120;d+=6)f.fillRect(Math.round(P.x+Math.cos(a)*d),Math.round(P.y-6+Math.sin(a)*d),1,1);}
+  for(const p of S.proj){f.fillStyle=p.k==='dart'?'#ffe39a':p.k==='gas'?'#9fdc8a':'#9aa3b0';f.fillRect(Math.round(p.x)-1,Math.round(p.y)-1,p.k==='dart'?2:3,p.k==='dart'?2:3)}
   if(rm.outdoor)for(const s of S.snow){f.fillStyle='rgba(225,236,250,.85)';f.fillRect(Math.round(s.x),Math.round(s.y),s.s,s.s)}
   // overlays: rings, meters, icons
   for(const r of S.rings){const k=RM?1:Math.min(1,r.t/.35);f.strokeStyle=`rgba(207,228,255,${.45*(1-r.t/.6)})`;f.lineWidth=1;f.beginPath();f.arc(r.x,r.y,Math.max(1,r.r*k),0,6.283);f.stroke()}
   for(const g of S.guards){if(g.st==='ko')continue;const x=Math.round(g.x),y=Math.round(g.y);
     const top=y+5-16*CSZ();if(g.st==='chase')drawTxt(f,'!',x,top-8,'#ff5a4a');else if(g.st==='inv')drawTxt(f,'?',x-1,top-8,'#ffd27a');
     if(g.meter>0.02&&g.st!=='chase'){f.fillStyle='#0a0f1a';f.fillRect(x-7,top-3,14,3);f.fillStyle=g.meter>.6?'#ff7a4a':'#ffd27a';f.fillRect(x-6,top-2,Math.round(12*g.meter),1)}}
-  if(S.mode==='play'&&P.pistol&&P.darts>0&&!P.hidden){const g=aimTarget();if(g){const x=Math.round(g.x),y=Math.round(g.y);f.fillStyle='#ff5a4a';const cs=CSZ(),cy=y+5-8*cs;for(const [sx,sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){const X=x+sx*(6*cs+3),Y=cy+sy*(8*cs+2);f.fillRect(sx<0?X:X-2,Y,3,1);f.fillRect(X,sy<0?Y:Y-2,1,3)}}}
+  if(S.mode==='play'&&P.pistol&&P.darts>0&&!P.hidden&&!(isTouch&&CTRL==='sticks')){const g=aimTarget();if(g){const x=Math.round(g.x),y=Math.round(g.y);f.fillStyle='#ff5a4a';const cs=CSZ(),cy=y+5-8*cs;for(const [sx,sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){const X=x+sx*(6*cs+3),Y=cy+sy*(8*cs+2);f.fillRect(sx<0?X:X-2,Y,3,1);f.fillRect(X,sy<0?Y:Y-2,1,3)}}}
   if(P.route&&P.route.mark){const m=P.route.mark,x=Math.round(clamp(m.x,4,LW-4)),y=Math.round(clamp(m.y,4,LH-4)),c=P.route.run?'#ff9a5a':'#9cc4ec';f.fillStyle=c;f.fillRect(x-3,y,2,1);f.fillRect(x+2,y,2,1);f.fillRect(x,y-3,1,2);f.fillRect(x,y+2,1,2)}
   if(S.search){const x=Math.round(P.x),y=Math.round(P.y);f.fillStyle='#0a0f1a';const sy=y+5-16*CSZ()-6;f.fillRect(x-9,sy,18,4);f.fillStyle='#9cc4ec';f.fillRect(x-8,sy+1,Math.round(16*S.search.t/(S.search.dur||1.5)),2)}
   // blit
@@ -876,11 +889,12 @@ function polyPath(c,p){c.beginPath();c.moveTo(p[0],p[1]);for(let i=2;i<p.length;
 const fmt=t=>{const m=Math.floor(t/60),s=t-m*60;return m+':'+(s<10?'0':'')+s.toFixed(1)};
 function updHUD(){
   if(!P||!S.room)return;
-  const sig=[S.lives,P.keys.join(),P.stones,P.darts,P.pistol,P.coat,P.film,S.room.id,S.seed,S.w.edges.map(e=>e.lock?1:0).join('')].join('|');
+  const sig=[S.lives,P.keys.join(),P.gas,P.stones,P.darts,P.pistol,P.coat,P.film,S.room.id,S.seed,S.w.edges.map(e=>e.lock?1:0).join('')].join('|');
   if(sig!==S.hsig){S.hsig=sig;
     $('lives').innerHTML=[0,1,2].map(i=>`<i class="pip${i<S.lives?'':' off'}"></i>`).join('');$('lives').setAttribute('aria-label',`Lives: ${S.lives} of 3`);
     $('room').textContent=FLOORS[S.room.lv].name+' · '+S.room.name;$('seed').textContent='Seed '+S.seed+' · Lv '+DIFF;
     const it=[];P.keys.forEach(c=>it.push(`<span class="chip"><i style="background:${KEYC[c]}"></i>${KEYN[c]} key</span>`));
+    if(P.gas)it.push(`<span class="chip"><i style="background:#9fdc8a;border-radius:50%"></i>Gas ${P.gas}</span>`);
     if(P.stones)it.push(`<span class="chip"><i style="background:#9aa3b0;border-radius:50%"></i>Stones ${P.stones}</span>`);
     if(P.pistol||P.darts)it.push(`<span class="chip"><i style="background:#ffe39a"></i>${P.pistol?'Pistol':'Darts'} ${P.darts}</span>`);
     if(P.coat)it.push(`<span class="chip"><i style="background:#4b5541"></i>Greatcoat</span>`);
@@ -910,10 +924,10 @@ const ov=$('ov');
 function showOv(html){ov.innerHTML=`<div class="panel">${html}</div>`;ov.hidden=false;setPrompt('');const b=ov.querySelector('.primary')||ov.querySelector('button');if(b)setTimeout(()=>{try{b.focus({preventScroll:true})}catch(e){}},30)}
 function hideOv(){ov.hidden=true;ov.innerHTML='';try{cv.focus&&document.activeElement&&document.activeElement.blur()}catch(e){}}
 const HOW=()=>`<ul>
-<li><b>Move</b>: tap or click where you want to go${isTouch?'':', or use <kbd>WASD</kbd>/<kbd>arrows</kbd>'}. Walking is silent. <b>Run</b> with a double-tap${isTouch?'':' or <kbd>Shift</kbd>'}: fast, but guards hear it.</li>
+<li><b>Move</b>: ${isTouch&&CTRL==='sticks'?'touch anywhere on the left half of the screen and slide your thumb; slide further to <b>run</b> (fast, but guards hear it).':isTouch?'tap where you want to go; double-tap to <b>run</b> (fast, but guards hear it).':'click where you want to go, or <kbd>WASD</kbd>/<kbd>arrows</kbd>. Hold <kbd>Shift</kbd> to <b>run</b> (fast, but guards hear it).'} Walking is silent.</li>
 <li><b>Hide</b> in lockers and crates or under tables, desks and beds: <kbd>H</kbd>${isTouch?' or HIDE':''}. Guards can't see you there, but one who walks right up to your spot will find you.</li>
 <li><b>Search</b>: hold <kbd>E</kbd>${isTouch?' or SEARCH':''} for 1.5 s at a locker or footlocker, or at a knocked-out guard to go through his pockets for darts, stones or keys. It makes a little noise. <kbd>E</kbd> also unlocks doors and uses exits.</li>
-<li><b>Fire</b> a tranquilizer dart: ${isTouch?'tap a guard, or ':''}<kbd>Space</kbd>${isTouch?' / FIRE':''}. It locks on to the guard in the red brackets, the nearest one in clear view. <b>Throw</b> a stone to lure guards: <kbd>Q</kbd>${isTouch?' or THROW':''}. Stones go the way you face.</li>
+<li><b>Fire</b> a tranquilizer dart: ${isTouch&&CTRL==='sticks'?'on the right half, slide your thumb the way you want to shoot and let go: the dart flies straight along the dotted line. A quick tap shoots the way you are facing.':isTouch?'tap a guard.':'<kbd>Space</kbd> shoots the guard in the red brackets, the nearest one in clear view.'} <b>Gas bomb</b> (${isTouch?'GAS':'<kbd>G</kbd>'}): puts everyone near where it lands to sleep, red officers too. <b>Throw</b> a stone to lure guards: <kbd>Q</kbd>${isTouch?' or THROW':''}. Stones go the way you face.</li>
 <li>Officers in red (one on the ground floor, more upstairs): darts don't work on them, so sneak past or hide. Stay out of flashlight cones: the bar over a guard fills faster the closer you are. In the greatcoat, guards only notice you close up or running.</li>
 <li>The magnifier button${isTouch?'':' (or <kbd>Z</kbd>)'} switches between the whole room and a close camera that follows you. Arrows at the edge point to guards out of view. <kbd>P</kbd> pauses, <kbd>M</kbd> mutes. Get caught three times and it's over.</li></ul>`;
 const DWORD=d=>d<=2?'Sleepy guards':d<=4?'Lax':d<=6?'Watchful':d<=8?'Sharp-eyed':d===9?'Ruthless':"The commandant's own";
@@ -927,7 +941,7 @@ ${HOW()}
 <div class="seedrow"><label for="seedIn">Seed</label><input id="seedIn" inputmode="numeric" autocomplete="off" maxlength="6" value="${S.seed}" aria-describedby="seedHelp"><button class="btn" data-act="reroll">New seed</button></div>
 <p class="muted" id="seedHelp">Same seed, same prison. Share it to race a friend.</p>
 <div class="diffrow"><label for="diffIn">Difficulty <b id="diffOut">${DIFF}</b> <span id="diffWord">${DWORD(DIFF)}</span></label><input type="range" id="diffIn" min="1" max="10" step="1" value="${DIFF}" aria-valuetext="${DIFF}, ${DWORD(DIFF)}"><div class="ends"><span>1 easiest</span><span>10 hardest</span></div></div>
-<div class="acts"><button class="btn primary" data-act="start">Begin escape</button><button class="btn" data-act="mute">${muted?'Sound: off':'Sound: on'}</button></div>
+${isTouch?`<div class="seedrow"><span class="muted">Touch controls</span><button class="btn" data-act="ctrl" aria-pressed="${CTRL==='sticks'}">${CTRL==='sticks'?'Thumb sticks':'Tap to move'}</button></div>`:''}<div class="acts"><button class="btn primary" data-act="start">Begin escape</button><button class="btn" data-act="mute">${muted?'Sound: off':'Sound: on'}</button></div>
 <p class="muted" id="bestLine">${bestTxt()}</p>`);
   const di=$('diffIn');di.addEventListener('input',()=>{setDiff(+di.value);store.set('lednik7_diff',String(DIFF));$('diffOut').textContent=DIFF;$('diffWord').textContent=DWORD(DIFF);di.setAttribute('aria-valuetext',DIFF+', '+DWORD(DIFF));$('bestLine').innerHTML=bestTxt()});
   const lc=$('logo'),sc=window.innerWidth<420?5:7,w=txtW('ЛЕДНИК-7');lc.width=(w+2)*sc;lc.height=7*sc;const l=lc.getContext('2d');drawTxt(l,'ЛЕДНИК-7',sc*1.5,sc*1.5,'#5b1714',sc);drawTxt(l,'ЛЕДНИК-7',sc,sc,'#cfe4ff',sc);
@@ -938,12 +952,42 @@ function pause(reason){if(S.mode!=='play')return;S.mode='pause';keys.clear();S.t
 <div class="acts"><button class="btn primary" data-act="resume">Resume</button><button class="btn" data-act="restart">Restart this seed</button><button class="btn" data-act="newrun">New prison</button><button class="btn" data-act="mute">${muted?'Sound: off':'Sound: on'}</button></div>`)}
 function showCaught(){showOv(`<h2>Caught</h2><p>A guard drags you back to the doorway.${P.coat?'':' If you had the greatcoat, it is gone.'}</p><p>Lives left: <b>${S.lives}</b></p><div class="acts"><button class="btn primary" data-act="resume">Continue</button></div>`)}
 function showOver(){showOv(`<h2>Back in the cell</h2><p>Three times caught. They double the guard and throw away the key.</p><p class="muted">Seed ${S.seed} · ${fmt(S.time)}</p><div class="acts"><button class="btn primary" data-act="restart">Try this seed again</button><button class="btn" data-act="newrun">New prison</button><button class="btn" data-act="title">Title screen</button></div>`)}
-function showWon(nb,best){showOv(`<h2>Escaped!</h2><p>You burst onto the frozen roof. Rotors already turning, an unmarked helicopter drops a rope ladder, and the island shrinks into the dark. The microfilm is safe.</p><p class="big">${fmt(S.time)}</p><p>${nb?'A new best time.':'Best: '+fmt(best)} · Seed <b>${S.seed}</b> · Level ${DIFF} · Lives left ${S.lives}</p><div class="acts"><button class="btn primary" data-act="newrun">New prison</button><button class="btn" data-act="restart">Replay this seed</button><button class="btn" data-act="title">Title screen</button></div>`)}
+function heliScene(cv2){
+  const W=160,H=90;cv2.width=W;cv2.height=H;const c=cv2.getContext('2d');c.imageSmoothingEnabled=false;
+  const stars=[...Array(40)].map(()=>[Math.random()*W,Math.random()*60,Math.random()<.2?2:1]);
+  const flakes=[...Array(40)].map(()=>({x:Math.random()*W,y:Math.random()*H,v:6+Math.random()*10}));
+  const t0=performance.now();let last=t0;
+  const R=(x,y,w,h,col)=>{c.fillStyle=col;c.fillRect(Math.round(x),Math.round(y),w,h)};
+  function frame(now){
+    if(!document.body.contains(cv2))return;
+    const t=RM?2.2:(now-t0)/1000,dt=Math.min(.05,(now-last)/1000);last=now;
+    const g=c.createLinearGradient(0,0,0,H);g.addColorStop(0,'#060b1c');g.addColorStop(1,'#1c2c52');c.fillStyle=g;c.fillRect(0,0,W,H);
+    for(const [x,y,z] of stars)R(x,y,1,1,z>1?'#e8f0ff':'#7f90b8');
+    R(22,10,7,7,'#dfe7f5');R(24,10,5,2,'#b8c4dc');
+    R(0,58,W,14,'#0d1b2e');R(118,55,40,3,'#2a3550');
+    R(0,70,W,20,'#2f394b');R(0,68,W,3,'#c4d2e4');R(14,60,10,10,'#3a4558');R(14,58,10,2,'#c4d2e4');R(130,63,6,7,'#3a4558');R(130,61,6,2,'#c4d2e4');
+    const climb=Math.min(1,t/2.4),lift=Math.max(0,t-2.8),hx=86-lift*lift*14,hy=22+Math.sin(t*3)*1.2-lift*10;
+    const bx=Math.round(hx),by=Math.round(hy);
+    R(bx+40,by+6,26,3,'#2c3626');R(bx+64,by+1,4,9,'#3f4d36');const tr=Math.floor(t*30)%2;R(bx+66,by+(tr?1:4),1,tr?7:1,'#9aa6b8');
+    R(bx,by+3,40,14,'#3f4d36');R(bx+2,by+15,36,3,'#2c3626');R(bx+1,by+4,12,7,'#7fa7d8');R(bx+2,by+5,4,2,'#cfe2ff');R(bx+18,by+6,10,9,'#1a2018');
+    R(bx+22,by+8,3,3,'#e0463b');
+    R(bx+4,by+20,34,1,'#1a1d22');R(bx+8,by+17,1,3,'#1a1d22');R(bx+32,by+17,1,3,'#1a1d22');
+    R(bx+19,by,3,3,'#2c3626');const span=[70,40,56][Math.floor(t*24)%3];R(bx+20-span/2,by-1,span,1,'#b8c4dc');
+    const ly=by+15,lb=69,top=lift>0?ly+18:lb;
+    if(lift<1.2){for(const x of [bx+19,bx+25])R(x,ly,1,Math.max(0,top-ly),'#a08a62');for(let y=ly+3;y<top;y+=4)R(bx+19,y,7,1,'#a08a62')}
+    if(lift<1.2){const py=Math.round(lb-16-climb*(lb-16-ly));c.drawImage(SPR.pris[Math.floor(t*6)%2][2],bx+16,py)}
+    for(const f of flakes){if(!RM){f.y+=f.v*dt;f.x-=(14+lift*20)*dt*(f.y<70?1:.3);if(f.y>H){f.y=-2;f.x=Math.random()*W}if(f.x<0)f.x=W}R(f.x,f.y,1,1,'rgba(225,236,250,.85)')}
+    if(!RM&&t<12)requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+function showWon(nb,best){sfx('heli');showOv(`<canvas id="heli" aria-label="A helicopter lifts off from the snowy prison roof with you on its rope ladder" role="img"></canvas><h2>Escaped!</h2><p>You burst onto the frozen roof. Rotors already turning, an unmarked helicopter drops a rope ladder, and the island shrinks into the dark. The microfilm is safe.</p><p class="big">${fmt(S.time)}</p><p>${nb?'A new best time.':'Best: '+fmt(best)} · Seed <b>${S.seed}</b> · Level ${DIFF} · Lives left ${S.lives}</p><div class="acts"><button class="btn primary" data-act="newrun">New prison</button><button class="btn" data-act="restart">Replay this seed</button><button class="btn" data-act="title">Title screen</button></div>`);heliScene($('heli'))}
 const rndSeed=()=>100000+Math.floor(Math.random()*900000);
 function startPlay(){hideOv();S.mode='play';last=performance.now();S.hsig=''}
 ov.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)return;initAudio();const a=b.dataset.act;
   if(a==='reroll'){const i=$('seedIn');if(i)i.value=rndSeed();return}
   if(a==='mute'){setMute(!muted);return}
+  if(a==='ctrl'){CTRL=CTRL==='sticks'?'tap':'sticks';store.set('lednik7_ctrl',CTRL);showTitle();return}
   if(a==='start'){const i=$('seedIn');let s=parseInt(i&&i.value,10);if(!(s>0))s=rndSeed();newRun(s,'play');startPlay();toast(`Your cell bars are loose. Find the commandant's office.`,4.5);return}
   if(a==='resume'){startPlay();return}
   if(a==='restart'){newRun(S.seed,'play');startPlay();return}
@@ -961,7 +1005,7 @@ addEventListener('keydown',e=>{
   if(k==='KeyZ'){cycleZoom();return}
   if(S.mode!=='play'){if((k==='KeyP'||k==='Escape')&&S.mode==='pause'){e.preventDefault();startPlay()}return}
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(k))e.preventDefault();
-  if(!e.repeat){if(k==='KeyE')S.actP=true;if(k==='Space')S.fireP=true;if(k==='KeyQ')S.throwP=true;if(k==='KeyH')S.hideP=true;if(k==='KeyP'||k==='Escape'){pause();return}}
+  if(!e.repeat){if(k==='KeyE')S.actP=true;if(k==='Space')S.fireP=true;if(k==='KeyQ')S.throwP=true;if(k==='KeyG')S.gasP=true;if(k==='KeyH')S.hideP=true;if(k==='KeyP'||k==='Escape'){pause();return}}
   keys.add(k);
 });
 addEventListener('keyup',e=>keys.delete(e.code));
@@ -978,10 +1022,24 @@ const fsNo=()=>{toast('Full screen is blocked on this page. Try Safari\'s aA men
 if(fsOK&&store.get('lednik7_nofs')!=='1')$('bFull').hidden=false;
 $('bFull').addEventListener('click',()=>{initAudio();try{const cur=document.fullscreenElement||document.webkitFullscreenElement;let r;if(cur)r=(document.exitFullscreen||document.webkitExitFullscreen).call(document);else r=(de.requestFullscreen||de.webkitRequestFullscreen).call(de);if(r&&r.catch)r.catch(fsNo)}catch(e){fsNo()}});
 let fsT=0;['fullscreenchange','webkitfullscreenchange'].forEach(ev=>document.addEventListener(ev,()=>{fsT=performance.now();qResize()}));
-function resetKnob(){S.jx=S.jy=0;tapId=null}
+function resetKnob(){S.jx=S.jy=0;S.jrun=false;S.aimV=null;tapId=null;if(typeof stk!=='undefined'){stk.mv=null;stk.aim=null}}
 let tapId=null,lastTap={t:0,x:0,y:0},tapRun=false,lastSet=0;
+let CTRL=store.get('lednik7_ctrl')||'sticks';
+const stk={mv:null,aim:null};
+function stickZone(e){if(S.mode!=='play'||FOLDED||e.pointerType==='mouse'||CTRL!=='sticks')return false;const t=e.target;if(t.closest&&(t.closest('button')||t.closest('input')||t.closest('#ov')||t.closest('#fold')))return false;return true}
+document.addEventListener('pointerdown',e=>{if(!stickZone(e))return;e.preventDefault();initAudio();const left=e.clientX<innerWidth/2;
+  if(left&&!stk.mv){stk.mv={id:e.pointerId,x:e.clientX,y:e.clientY};if(P.hidden)unhide()}
+  else if(!left&&!stk.aim){stk.aim={id:e.pointerId,x:e.clientX,y:e.clientY,t:performance.now(),dx:0,dy:0}}},{passive:false});
+document.addEventListener('pointermove',e=>{const R0=Math.min(60,innerWidth*.07);
+  if(stk.mv&&e.pointerId===stk.mv.id){let dx=(e.clientX-stk.mv.x)/R0,dy=(e.clientY-stk.mv.y)/R0;const m=Math.hypot(dx,dy);S.jrun=m>1.6;if(m>1){dx/=m;dy/=m}S.jx=m<.2?0:dx;S.jy=m<.2?0:dy;
+    if(m>2.2){stk.mv.x=e.clientX-dx*R0*2.2;stk.mv.y=e.clientY-dy*R0*2.2}}
+  if(stk.aim&&e.pointerId===stk.aim.id){const dx=e.clientX-stk.aim.x,dy=e.clientY-stk.aim.y,m=Math.hypot(dx,dy);stk.aim.dx=dx;stk.aim.dy=dy;if(m>18){S.aimV={x:dx/m,y:dy/m};P.ax=dx/m;P.ay=dy/m}else S.aimV=null}});
+function stickEnd(e){if(stk.mv&&e.pointerId===stk.mv.id){stk.mv=null;S.jx=S.jy=0;S.jrun=false}
+  if(stk.aim&&e.pointerId===stk.aim.id){const a=stk.aim,m=Math.hypot(a.dx,a.dy);stk.aim=null;
+    if(S.mode==='play'&&!P.hidden){if(m>18){S.fireDir={x:a.dx/m,y:a.dy/m};S.fireP=true}else if(performance.now()-a.t<350){S.fireFace=true;S.fireP=true}}S.aimV=null}}
+['pointerup','pointercancel'].forEach(ev=>document.addEventListener(ev,stickEnd));
 function stagePt(e){const r=cv.getBoundingClientRect(),vw=LW/ZOOM,vh=LH/ZOOM;return{x:CAM.x+(e.clientX-r.left)/r.width*vw,y:CAM.y+(e.clientY-r.top)/r.height*vh}}
-$('stage').addEventListener('pointerdown',e=>{if(S.mode!=='play'||FOLDED)return;e.preventDefault();initAudio();const p=stagePt(e),now=performance.now();
+$('stage').addEventListener('pointerdown',e=>{if(S.mode!=='play'||FOLDED||(CTRL==='sticks'&&e.pointerType!=='mouse'))return;e.preventDefault();initAudio();const p=stagePt(e),now=performance.now();
   const hit=P.pistol&&P.darts>0&&!P.hidden?S.guards.find(g=>g.st!=='ko'&&Math.hypot(g.x-p.x,g.y+5-8*CSZ()-p.y)<8*CSZ()+5):null;
   if(hit&&hit.elite){toast("Darts won't stop the officers in red. Avoid them.");return}
   if(hit){S.shootAt=hit;S.fireP=true;lastTap={t:0,x:0,y:0};return}
@@ -990,7 +1048,7 @@ $('stage').addEventListener('pointermove',e=>{if(e.pointerId!==tapId||S.mode!=='
 ['pointerup','pointercancel','lostpointercapture'].forEach(ev=>$('stage').addEventListener(ev,e=>{if(e.pointerId===tapId)tapId=null}));
 function tbtn(id,down,up){const b=$(id);b.addEventListener('pointerdown',e=>{e.preventDefault();initAudio();b.classList.add('down');try{b.setPointerCapture(e.pointerId)}catch(_){}down()});const u=()=>{b.classList.remove('down');up&&up()};['pointerup','pointercancel','lostpointercapture'].forEach(ev=>b.addEventListener(ev,u));b.addEventListener('contextmenu',e=>e.preventDefault())}
 tbtn('tSearch',()=>{S.touchAct=true;if(S.mode==='play')S.actP=true},()=>{S.touchAct=false});
-tbtn('tFire',()=>{if(S.mode==='play')S.fireP=true});
+tbtn('tFire',()=>{if(S.mode==='play')S.gasP=true});
 tbtn('tThrow',()=>{if(S.mode==='play')S.throwP=true});
 tbtn('tHide',()=>{if(S.mode==='play')S.hideP=true});
 document.addEventListener('touchmove',e=>{if(!e.target.closest||!e.target.closest('.panel'))e.preventDefault()},{passive:false});
